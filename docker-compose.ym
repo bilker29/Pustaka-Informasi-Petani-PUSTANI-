@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # === MICROSERVICE 1: APP PUSTANI ===
+  pustani-app:
+    build: .
+    container_name: service-app
+    restart: always
+    environment:
+      - DOCKER_ENV=true
+    networks:
+      - pustani-net
+
+  # === MICROSERVICE 2: DATABASE ===
+  pustani-db:
+    image: mariadb:10.6
+    container_name: service-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: pustani_db
+      MYSQL_USER: docker_user
+      MYSQL_PASSWORD: docker_pass
+    volumes:
+      - db_data:/var/lib/mysql
+      # Import database otomatis saat pertama kali jalan
+      - ./Tubes/database/pustani_db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pustani-net
+
+  # === MICROSERVICE 3: API GATEWAY (NGINX) ===
+  api-gateway:
+    image: nginx:latest
+    container_name: gateway
+    ports:
+      - "80:80" # Port 80 Server AWS -> Port 80 Gateway
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - pustani-app
+    networks:
+      - pustani-net
+
+networks:
+  pustani-net:
+    driver: bridge
+
+volumes:
+  db_data:

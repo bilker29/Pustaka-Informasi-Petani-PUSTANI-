@@ -3,7 +3,7 @@ name: Deploy Pustani ke AWS
 on:
   push:
     branches:
-      - main  # Otomatis jalan saat ada update di branch main
+      - main
 
 jobs:
   deploy:
@@ -12,24 +12,24 @@ jobs:
       - name: 1. Ambil Kodingan Terbaru
         uses: actions/checkout@v3
 
-      - name: 2. Kirim File ke AWS (SCP)
+      - name: 2. Kirim SEMUA File ke AWS
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_KEY }}
-          source: "Tubes/*"               # Mengirim folder Tubes
+          source: "."                     # Titik artinya "Kirim Semua Folder & File"
           target: "/var/www/html/pustani" # Tujuan di server
-          strip_components: 1             # Hilangkan kulit folder 'Tubes', ambil isinya saja
+          # Baris 'strip_components' DIHAPUS agar struktur foldernya tetap utuh
 
-      - name: 3. Rapikan Izin File di Server
+      - name: 3. Finalisasi Izin File
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_KEY }}
           script: |
-            # Pastikan Apache (www-data) bisa membaca file yang baru dikirim
-            sudo chown -R ubuntu:www-data /var/www/html/pustani
-            sudo chmod -R 755 /var/www/html/pustani
-            echo "Deployment Selesai!"
+            # Pastikan user ubuntu punya akses penuh
+            sudo chown -R ubuntu:ubuntu /var/www/html/pustani
+            sudo chmod -R 775 /var/www/html/pustani
+            echo "File baru (termasuk Docker) sudah sampai!"
