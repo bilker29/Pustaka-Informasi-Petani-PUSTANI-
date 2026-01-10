@@ -1,0 +1,35 @@
+name: Deploy Pustani ke AWS
+
+on:
+  push:
+    branches:
+      - main  # Otomatis jalan saat ada update di branch main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Ambil Kodingan Terbaru
+        uses: actions/checkout@v3
+
+      - name: 2. Kirim File ke AWS (SCP)
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_KEY }}
+          source: "Tubes/*"               # Mengirim folder Tubes
+          target: "/var/www/html/pustani" # Tujuan di server
+          strip_components: 1             # Hilangkan kulit folder 'Tubes', ambil isinya saja
+
+      - name: 3. Rapikan Izin File di Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_KEY }}
+          script: |
+            # Pastikan Apache (www-data) bisa membaca file yang baru dikirim
+            sudo chown -R ubuntu:www-data /var/www/html/pustani
+            sudo chmod -R 755 /var/www/html/pustani
+            echo "Deployment Selesai!"

@@ -215,7 +215,7 @@ if (isset($_POST['register'])) {
 
     <nav class="navbar navbar-expand-lg navbar-light sticky-top">
         <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="#">
+            <a class="navbar-brand d-flex align-items-center" href="Home.php">
                 <img src="../../public/img/img1/logo navbar.png" alt="Logo">
             </a>
         </div>
