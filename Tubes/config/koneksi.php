@@ -21,7 +21,7 @@ if ($env == 'DEV') {
     $user = "admin_aws"; 
     
     // Ganti dengan Password Database AWS yang KUAT tadi
-    $pass = "PasswordAWSKuat123!"; 
+    $pass = ""; 
     
     $db   = "pustani_db";
 }
