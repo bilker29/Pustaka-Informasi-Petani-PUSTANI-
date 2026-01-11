@@ -8,36 +8,36 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     exit;
 }
 
-// Variabel kontrol
+// Inisialisasi variabel kontrol
 $missing_table_message = '';
+$query_error_message = '';
 $result = false;
 
-try {
-    // Pastikan koneksi valid
-    if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-        throw new Exception('Koneksi database tidak ditemukan.');
-    }
-
-    // Cek apakah tabel 'articles' ada
-    $check = $koneksi->query("SHOW TABLES LIKE 'articles'");
-    if ($check && $check->num_rows > 0) {
-        // Jika ada, jalankan SELECT dengan JOIN
-        $query = "SELECT articles.*, users.username, users.role FROM articles JOIN users ON articles.user_id = users.id WHERE articles.status = 'published' ORDER BY articles.created_at DESC";
-        $result = $koneksi->query($query);
-        // Jika query mengembalikan false, tetap aman — $result akan bernilai false
+// Pastikan koneksi mysqli tersedia
+if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+    $missing_table_message = 'Koneksi database tidak ditemukan. Periksa konfigurasi koneksi.';
+} else {
+    // Cek keberadaan tabel 'articles' terlebih dahulu
+    $check = mysqli_query($koneksi, "SHOW TABLES LIKE 'articles'");
+    if ($check === false) {
+        // Jika terjadi error pada CHECK, simpan pesan error
+        $query_error_message = 'Kesalahan saat memeriksa tabel: ' . mysqli_error($koneksi);
+    } elseif (mysqli_num_rows($check) > 0) {
+        // Jika tabel ada, jalankan query SELECT
+        $sql = "SELECT articles.*, users.username, users.role 
+                FROM articles 
+                JOIN users ON articles.user_id = users.id 
+                WHERE articles.status = 'published' 
+                ORDER BY articles.created_at DESC";
+        $result = mysqli_query($koneksi, $sql);
+        if ($result === false) {
+            $query_error_message = 'Gagal mengambil daftar artikel: ' . mysqli_error($koneksi);
+        }
     } else {
         $missing_table_message = "Tabel 'articles' tidak ditemukan di database. Daftar artikel tidak dapat ditampilkan.";
     }
-} catch (mysqli_sql_exception $e) {
-    // Tangani exception mysqli (jika dikonfigurasi melempar)
-    $missing_table_message = "Kesalahan database: " . $e->getMessage();
-    $result = false;
-} catch (Exception $e) {
-    $missing_table_message = "Kesalahan: " . $e->getMessage();
-    $result = false;
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="id">
 
@@ -390,29 +390,49 @@ try {
 
     <main class="container my-5 py-4">
         <h2 class="fw-800 mb-5 text-center">Info Tani Terbaru</h2>
+
+        <?php if ($missing_table_message): ?>
+            <div class="alert alert-warning">
+                <?= htmlspecialchars($missing_table_message); ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($query_error_message): ?>
+            <div class="alert alert-danger">
+                <?= htmlspecialchars($query_error_message); ?>
+            </div>
+        <?php endif; ?>
+
         <div class="row g-4">
-            <?php if (mysqli_num_rows($result) > 0) : ?>
-                <?php while ($row = mysqli_fetch_assoc($result)) :
-                    $imgSrc = $row['image'];
+            <?php
+            // Hati-hati: hanya panggil mysqli_num_rows jika $result bukan false
+            if ($result !== false && mysqli_num_rows($result) > 0) :
+                while ($row = mysqli_fetch_assoc($result)) :
+                    // Ambil image safe
+                    $imgSrc = isset($row['image']) ? $row['image'] : '';
                     if (!filter_var($imgSrc, FILTER_VALIDATE_URL)) {
                         $path = "../../public/img/img1/" . $imgSrc;
-                        if (file_exists($path)) {
+                        if (!empty($imgSrc) && file_exists($path)) {
                             $imgSrc = $path;
                         } else {
                             $imgSrc = "https://placehold.co/600x400?text=No+Image";
                         }
                     }
-                ?>
+                    $title = htmlspecialchars($row['title'] ?? 'Tanpa Judul');
+                    $category = htmlspecialchars($row['category'] ?? 'Umum');
+                    $username = htmlspecialchars($row['username'] ?? 'Anonim');
+                    $id = urlencode($row['id'] ?? '');
+            ?>
                     <div class="col-md-6 col-lg-4">
                         <div class="card card-article">
-                            <img src="<?= htmlspecialchars($imgSrc); ?>" class="card-img-top" alt="<?= htmlspecialchars($row['title']); ?>">
+                            <img src="<?= htmlspecialchars($imgSrc); ?>" class="card-img-top" alt="<?= $title; ?>">
                             <div class="card-body">
-                                <span class="category-badge"><?= htmlspecialchars($row['category']); ?></span>
-                                <a href="artikel.php?id=<?= $row['id']; ?>" class="article-title"><?= htmlspecialchars($row['title']); ?></a>
+                                <span class="category-badge"><?= $category; ?></span>
+                                <a href="artikel.php?id=<?= $id; ?>" class="article-title"><?= $title; ?></a>
 
                                 <div class="meta-text small text-muted">
-                                    Oleh: <?= htmlspecialchars($row['username']); ?>
-                                    <?php if ($row['role'] == 'expert'): ?>
+                                    Oleh: <?= $username; ?>
+                                    <?php if (isset($row['role']) && $row['role'] === 'expert') : ?>
                                         <i class="bi bi-patch-check-fill text-primary ms-1" title="Ahli Tani"></i>
                                     <?php endif; ?>
                                 </div>
@@ -420,10 +440,12 @@ try {
                             </div>
                         </div>
                     </div>
-                <?php endwhile; ?>
-            <?php else : ?>
+                <?php endwhile;
+                // Bebaskan result
+                mysqli_free_result($result);
+            else : ?>
                 <div class="col-md-6 col-lg-4">
-                    <div class="card card-article"><img src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?q=80&w=1470&auto=format&fit=crop" class="card-img-top">
+                    <div class="card card-article"><img src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?q=80&w=1470&auto=format&fit=crop" class="card-img-top" alt="Placeholder">
                         <div class="card-body"><span class="category-badge">TEKNOLOGI</span><a href="#" class="article-title">Smart Farming Berbasis IoT</a>
                             <div class="meta-text small text-muted">Ir. Sujarwo</div>
                         </div>
