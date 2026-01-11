@@ -1,11 +1,11 @@
-name: Deploy Pustani ke AWS  # <-- INI BAGIAN YANG HILANG (KEPALA)
+name: Deploy Pustani ke AWS
 
-on:                          # <-- INI JUGA HILANG TADI
+on:
   push:
     branches:
       - main
 
-jobs:                        # <-- FILE KAMU BARU MULAI DARI SINI (SALAH)
+jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +19,7 @@ jobs:                        # <-- FILE KAMU BARU MULAI DARI SINI (SALAH)
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_KEY }}
           source: "."
-          target: "pustani_temp" # Ini sudah benar, jangan diubah!
+          target: "pustani_temp" # Upload ke folder Home agar aman dari permission denied
 
       - name: 3. Pindahkan File & Restart Docker
         uses: appleboy/ssh-action@master
@@ -32,7 +32,7 @@ jobs:                        # <-- FILE KAMU BARU MULAI DARI SINI (SALAH)
             sudo mkdir -p /var/www/html/pustani
             
             # 2. Pindahkan file dari folder sementara ke folder asli
-            # Pakai rsync agar lebih aman
+            # Menggunakan rsync agar lebih aman dan menimpa file lama
             sudo rsync -av --remove-source-files pustani_temp/ /var/www/html/pustani/
             
             # Bersihkan folder sementara
@@ -41,12 +41,13 @@ jobs:                        # <-- FILE KAMU BARU MULAI DARI SINI (SALAH)
             # 3. Masuk ke folder project
             cd /var/www/html/pustani
             
-            # 4. Perbaiki izin file (PENTING)
+            # 4. Perbaiki izin file (PENTING untuk upload gambar)
             sudo chown -R www-data:www-data /var/www/html/pustani
             sudo chmod -R 775 /var/www/html/pustani
 
-            # 5. Restart Aplikasi
-            sudo docker-compose down
+            # 5. Restart Aplikasi & Reset Database
+            # Catatan: "-v" digunakan untuk menghapus data lama yang error
+            sudo docker-compose down -v
             sudo docker-compose up -d --build
             
-            echo "Deploy Selesai! Pustani sudah live."
+            echo "Deploy Selesai! Pustani sudah live dengan database baru."
