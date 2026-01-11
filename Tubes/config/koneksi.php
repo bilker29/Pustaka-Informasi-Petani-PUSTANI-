@@ -1,10 +1,10 @@
 <?php
 // Deteksi jika berjalan di dalam Docker (Lewat Environment Variable)
 if (getenv('DOCKER_ENV')) {
-    $host = "pustani-db"; // Nama Service Database di docker-compose
-    $user = "docker_user";
-    $pass = "docker_pass";
-    $db   = "pustani_db";
+    $host = getenv('DB_HOST') ?: 'localhost';
+    $user = getenv('DB_USER') ?: 'root';
+    $pass = getenv('DB_PASS') ?: '';
+    $db   = getenv('DB_NAME') ?: 'pustani_db';
 } 
 // Fallback ke Logika Level 3 (AWS/Laptop biasa)
 else {
