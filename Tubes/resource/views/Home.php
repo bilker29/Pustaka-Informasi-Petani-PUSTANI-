@@ -8,8 +8,34 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     exit;
 }
 
-$query = "SELECT articles.*, users.username, users.role FROM articles JOIN users ON articles.user_id = users.id WHERE articles.status = 'published' ORDER BY articles.created_at DESC";
-$result = mysqli_query($koneksi, $query);
+// Variabel kontrol
+$missing_table_message = '';
+$result = false;
+
+try {
+    // Pastikan koneksi valid
+    if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+        throw new Exception('Koneksi database tidak ditemukan.');
+    }
+
+    // Cek apakah tabel 'articles' ada
+    $check = $koneksi->query("SHOW TABLES LIKE 'articles'");
+    if ($check && $check->num_rows > 0) {
+        // Jika ada, jalankan SELECT dengan JOIN
+        $query = "SELECT articles.*, users.username, users.role FROM articles JOIN users ON articles.user_id = users.id WHERE articles.status = 'published' ORDER BY articles.created_at DESC";
+        $result = $koneksi->query($query);
+        // Jika query mengembalikan false, tetap aman — $result akan bernilai false
+    } else {
+        $missing_table_message = "Tabel 'articles' tidak ditemukan di database. Daftar artikel tidak dapat ditampilkan.";
+    }
+} catch (mysqli_sql_exception $e) {
+    // Tangani exception mysqli (jika dikonfigurasi melempar)
+    $missing_table_message = "Kesalahan database: " . $e->getMessage();
+    $result = false;
+} catch (Exception $e) {
+    $missing_table_message = "Kesalahan: " . $e->getMessage();
+    $result = false;
+}
 ?>
 
 <!DOCTYPE html>
