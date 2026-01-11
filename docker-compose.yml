@@ -53,13 +53,6 @@ services:
     networks:
       - pustani-net
 
-networks:
-  pustani-net:
-    driver: bridge
-
-volumes:
-  db_data:
-
   # 1. METRICS COLLECTOR (Mengambil data CPU/RAM Container)
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
@@ -97,3 +90,10 @@ volumes:
       - prometheus
     networks:
       - pustani-net
+
+    networks:
+  pustani-net:
+    driver: bridge
+
+volumes:
+  db_data:
