@@ -2,40 +2,69 @@
 session_start();
 require '../../config/koneksi.php';
 
-$login_status = "";
-$redirect_page = "";
+// Non-aktifkan mysqli exception reporting agar kita bisa menangani error secara manual
+mysqli_report(MYSQLI_REPORT_OFF);
 
-if (isset($_POST['login'])) {
-    $email = mysqli_real_escape_string($koneksi, $_POST['email']);
-    $password = $_POST['password'];
+$missing_users_message = '';
+$error_message = '';
+$email = '';
 
-    $result = mysqli_query($koneksi, "SELECT * FROM users WHERE email = '$email'");
-
-    if (mysqli_num_rows($result) === 1) {
-        $row = mysqli_fetch_assoc($result);
-
-        // Memverifikasi password hash
-        if (password_verify($password, $row['password'])) {
-            $_SESSION['login'] = true;
-            $_SESSION['user_id'] = $row['id'];
-            $_SESSION['username'] = $row['username'];
-            $_SESSION['role'] = $row['role'];
-
-            $login_status = "success";
-
-            // --- PERBAIKAN DI SINI ---
-            // Jika Admin -> ke Dashboard Admin (jika ada)
-            // Jika User/Expert -> ke Dashboard.php (Dashboard User)
-            if ($row['role'] === 'admin') {
-                $redirect_page = 'admin/dashboard.php';
-            } else {
-                $redirect_page = 'dashboard.php'; // Redirect ke Dashboard User
-            }
-        } else {
-            $login_status = "password_wrong";
-        }
+// Pastikan koneksi mysqli valid
+if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+    $missing_users_message = 'Koneksi database tidak ditemukan. Periksa konfigurasi koneksi.';
+} else {
+    // Cek keberadaan tabel 'users' sebelum menjalankan query apapun
+    $check = mysqli_query($koneksi, "SHOW TABLES LIKE 'users'");
+    if ($check === false) {
+        error_log('SHOW TABLES users error: ' . mysqli_error($koneksi));
+        $missing_users_message = 'Terjadi kesalahan saat memeriksa tabel pengguna. Silakan hubungi administrator.';
+    } elseif (mysqli_num_rows($check) === 0) {
+        $missing_users_message = "Tabel 'users' tidak ditemukan di database. Fitur login tidak dapat digunakan.";
     } else {
-        $login_status = "email_not_found";
+        // Jika tabel ada, proses form login saat POST
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+
+            if ($email === '' || $password === '') {
+                $error_message = 'Email dan password harus diisi.';
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error_message = 'Format email tidak valid.';
+            } else {
+                // Prepared statement untuk mengambil user berdasarkan email
+                $stmt = $koneksi->prepare("SELECT id, name, email, password, role FROM users WHERE email = ? LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param('s', $email);
+                    if ($stmt->execute()) {
+                        $res = $stmt->get_result();
+                        if ($res && $res->num_rows === 1) {
+                            $user = $res->fetch_assoc();
+                            // Pastikan kolom password tersimpan sebagai hash (password_hash)
+                            if (password_verify($password, $user['password'])) {
+                                // Login sukses: set session dan redirect
+                                $_SESSION['user_id'] = $user['id'];
+                                $_SESSION['user_name'] = $user['name'];
+                                $_SESSION['role'] = $user['role'];
+                                header('Location: index.php'); // sesuaikan redirect tujuan setelah login
+                                exit;
+                            } else {
+                                $error_message = 'Email atau password salah.';
+                            }
+                        } else {
+                            $error_message = 'Email atau password salah.';
+                        }
+                        if ($res) $res->free();
+                    } else {
+                        error_log('Login execute error: ' . $stmt->error);
+                        $error_message = 'Terjadi kesalahan saat memproses login. Silakan coba lagi.';
+                    }
+                    $stmt->close();
+                } else {
+                    error_log('Prepare login failed: ' . $koneksi->error);
+                    $error_message = 'Terjadi kesalahan server. Silakan coba lagi nanti.';
+                }
+            }
+        }
     }
 }
 ?>

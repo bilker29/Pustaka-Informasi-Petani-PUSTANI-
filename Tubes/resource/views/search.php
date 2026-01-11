@@ -2,23 +2,96 @@
 session_start();
 require '../../config/koneksi.php';
 
-// Logika Pencarian
-$keyword = "";
-$query_search = "SELECT articles.*, users.username, users.role FROM articles 
-                 JOIN users ON articles.user_id = users.id 
-                 WHERE status='published' ORDER BY created_at DESC LIMIT 6";
+// Non-aktifkan reporting mysqli yang melempar exception (jika ingin gunakan try/catch, bisa diubah)
+mysqli_report(MYSQLI_REPORT_OFF);
 
-if (isset($_GET['keyword'])) {
-    $keyword = mysqli_real_escape_string($koneksi, $_GET['keyword']);
-    // Cari di judul atau isi konten
-    $query_search = "SELECT articles.*, users.username, users.role FROM articles 
-                     JOIN users ON articles.user_id = users.id 
-                     WHERE status='published' 
-                     AND (title LIKE '%$keyword%' OR content LIKE '%$keyword%') 
-                     ORDER BY created_at DESC";
+// Pesan untuk UI
+$missing_table_message = '';
+$query_error_message = '';
+$results = [];
+$q = trim($_GET['q'] ?? '');
+
+// Proteksi: jika role admin dilarang (sama seperti halaman lain)
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+    header("Location: admin/dashboard.php");
+    exit;
 }
 
-$result = mysqli_query($koneksi, $query_search);
+// Pastikan koneksi valid
+if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+    $missing_table_message = 'Koneksi database tidak ditemukan. Periksa konfigurasi koneksi.';
+} else {
+    // Cek keberadaan tabel articles dan users
+    $checkArticles = $koneksi->query("SHOW TABLES LIKE 'articles'");
+    if ($checkArticles === false) {
+        $query_error_message = 'Gagal memeriksa tabel: ' . $koneksi->error;
+    } elseif ($checkArticles->num_rows === 0) {
+        $missing_table_message = "Tabel 'articles' tidak ditemukan di database. Pencarian tidak dapat dilakukan.";
+    } else {
+        // cek apakah tabel users ada (opsional, untuk menampilkan username)
+        $checkUsers = $koneksi->query("SHOW TABLES LIKE 'users'");
+        $hasUsers = ($checkUsers && $checkUsers->num_rows > 0);
+
+        // Jika ada query pencarian yang valid, proses pencarian
+        if ($q !== '') {
+            // Siapkan pattern pencarian
+            $like = '%' . $q . '%';
+
+            if ($hasUsers) {
+                // Gunakan JOIN dengan prepared statement
+                $sql = "SELECT articles.id, articles.title, articles.image, articles.category, articles.created_at, users.username, users.role
+                        FROM articles
+                        JOIN users ON articles.user_id = users.id
+                        WHERE articles.status = 'published' AND (articles.title LIKE ? OR articles.content LIKE ?)
+                        ORDER BY articles.created_at DESC";
+                $stmt = $koneksi->prepare($sql);
+                if ($stmt) {
+                    $stmt->bind_param('ss', $like, $like);
+                    if ($stmt->execute()) {
+                        $res = $stmt->get_result();
+                        $results = $res->fetch_all(MYSQLI_ASSOC);
+                        $res->free();
+                    } else {
+                        error_log('Search execute error (with users): ' . $stmt->error);
+                        $query_error_message = 'Terjadi kesalahan saat mencari artikel. Silakan coba lagi.';
+                    }
+                    $stmt->close();
+                } else {
+                    error_log('Prepare failed (with users): ' . $koneksi->error);
+                    $query_error_message = 'Terjadi kesalahan server saat menyiapkan pencarian.';
+                }
+            } else {
+                // Jika tabel users tidak ada, jalankan query tanpa JOIN
+                $sql = "SELECT id, title, image, category, created_at, content
+                        FROM articles
+                        WHERE status = 'published' AND (title LIKE ? OR content LIKE ?)
+                        ORDER BY created_at DESC";
+                $stmt = $koneksi->prepare($sql);
+                if ($stmt) {
+                    $stmt->bind_param('ss', $like, $like);
+                    if ($stmt->execute()) {
+                        $res = $stmt->get_result();
+                        $rows = $res->fetch_all(MYSQLI_ASSOC);
+                        // tambahkan username default 'Anonim' agar tampilan konsisten
+                        foreach ($rows as $r) {
+                            $r['username'] = 'Anonim';
+                            $r['role'] = '';
+                            $results[] = $r;
+                        }
+                        $res->free();
+                    } else {
+                        error_log('Search execute error (no users): ' . $stmt->error);
+                        $query_error_message = 'Terjadi kesalahan saat mencari artikel. Silakan coba lagi.';
+                    }
+                    $stmt->close();
+                } else {
+                    error_log('Prepare failed (no users): ' . $koneksi->error);
+                    $query_error_message = 'Terjadi kesalahan server saat menyiapkan pencarian.';
+                }
+            }
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
