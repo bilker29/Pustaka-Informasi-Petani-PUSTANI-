@@ -8,7 +8,7 @@ services:
     restart: always
     environment:
       - APP_ENV=PROD
-      - DB_HOST=pustani_db
+      - DB_HOST=pustani-db    # <--- SUDAH DIPERBAIKI (Pakai Strip)
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
       - DB_NAME=pustani_db
@@ -53,7 +53,7 @@ services:
     networks:
       - pustani-net
 
-  # === MONITORING STACK (SUDAH BENAR DI SINI) ===
+  # === MONITORING STACK ===
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: monitoring-cadvisor
@@ -89,7 +89,7 @@ services:
     networks:
       - pustani-net
 
-# === BAGIAN INI HARUS RATA KIRI (ROOT LEVEL) ===
+# === BAGIAN INI RATA KIRI (ROOT LEVEL) ===
 networks:
   pustani-net:
     driver: bridge
