@@ -7,7 +7,7 @@ services:
     container_name: service-app
     restart: always
     environment:
-      - APP_ENV=PROD     # Menggunakan env variable (Level 3)
+      - APP_ENV=PROD
       - DB_HOST=pustani-db
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
@@ -15,9 +15,9 @@ services:
     networks:
       - pustani-net
 
-  # === MICROSERVICE 2: INFO SERVICE (BARU) ===
+  # === MICROSERVICE 2: INFO SERVICE ===
   pustani-info:
-    build: ./info-service # Menggunakan Dockerfile di folder info-service
+    build: ./info-service
     container_name: service-info
     restart: always
     networks:
@@ -53,7 +53,7 @@ services:
     networks:
       - pustani-net
 
-  # 1. METRICS COLLECTOR (Mengambil data CPU/RAM Container)
+  # === MONITORING STACK (SUDAH BENAR DI SINI) ===
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: monitoring-cadvisor
@@ -67,7 +67,6 @@ services:
     networks:
       - pustani-net
 
-  # 2. PROMETHEUS (Database Monitoring)
   prometheus:
     image: prom/prometheus:latest
     container_name: monitoring-prometheus
@@ -78,20 +77,20 @@ services:
     networks:
       - pustani-net
 
-  # 3. GRAFANA (Dashboard Visual)
   grafana:
     image: grafana/grafana:latest
     container_name: monitoring-grafana
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin # Password login grafana
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
     networks:
       - pustani-net
 
-    networks:
+# === BAGIAN INI HARUS RATA KIRI (ROOT LEVEL) ===
+networks:
   pustani-net:
     driver: bridge
 
