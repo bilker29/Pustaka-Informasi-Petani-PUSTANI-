@@ -22,14 +22,23 @@ jobs:
           target: "/var/www/html/pustani" # Tujuan di server
           # Baris 'strip_components' DIHAPUS agar struktur foldernya tetap utuh
 
-      - name: 3. Finalisasi Izin File
+      - name: 3. Finalisasi & Restart Docker
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_KEY }}
           script: |
-            # Pastikan user ubuntu punya akses penuh
-            sudo chown -R ubuntu:ubuntu /var/www/html/pustani
+            # Masuk ke folder project
+            cd /var/www/html/pustani
+            
+            # Ubah izin file (Penting untuk upload gambar)
+            sudo chown -R www-data:www-data /var/www/html/pustani
             sudo chmod -R 775 /var/www/html/pustani
-            echo "File baru (termasuk Docker) sudah sampai!"
+
+            # Restart Aplikasi dengan Build Terbaru
+            # Ini akan otomatis mendeteksi perubahan di docker-compose atau kodingan
+            docker-compose down
+            docker-compose up -d --build
+            
+            echo "Deploy Selesai! Aplikasi sudah live dengan update terbaru."
