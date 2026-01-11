@@ -5,7 +5,7 @@
  */
 
 // Gunakan 127.0.0.1 untuk menghindari error "No such file or directory" (socket error)
-$host = getenv('DB_HOST') ?: '54.169.72.91';
+$host = getenv('DB_HOST') ?: '127.0.0.1';
 $user = getenv('DB_USER') ?: 'root';
 $pass = getenv('DB_PASSWORD') ?: '';
 $db   = getenv('DB_NAME') ?: 'pustani_db';
