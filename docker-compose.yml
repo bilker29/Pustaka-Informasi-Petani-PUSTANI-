@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  # === MICROSERVICE 1: APP PUSTANI ===
+  # === MICROSERVICE 1: APP UTAMA ===
   pustani-app:
-    build: .
+    build: .             # Menggunakan Dockerfile utama
     container_name: service-app
     restart: always
     environment:
-      - APP_ENV=PROD
+      - APP_ENV=PROD     # Menggunakan env variable (Level 3)
       - DB_HOST=pustani-db
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
@@ -15,7 +15,15 @@ services:
     networks:
       - pustani-net
 
-  # === MICROSERVICE 2: DATABASE ===
+  # === MICROSERVICE 2: INFO SERVICE (BARU) ===
+  pustani-info:
+    build: ./info-service # Menggunakan Dockerfile di folder info-service
+    container_name: service-info
+    restart: always
+    networks:
+      - pustani-net
+
+  # === MICROSERVICE 3: DATABASE ===
   pustani-db:
     image: mariadb:10.6
     container_name: service-db
@@ -27,21 +35,21 @@ services:
       MYSQL_PASSWORD: docker_pass
     volumes:
       - db_data:/var/lib/mysql
-      # Import database otomatis saat pertama kali jalan
       - ./Tubes/database/pustani_db.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - pustani-net
 
-  # === MICROSERVICE 3: API GATEWAY (NGINX) ===
+  # === API GATEWAY (NGINX) ===
   api-gateway:
     image: nginx:latest
     container_name: gateway
     ports:
-      - "80:80" # Port 80 Server AWS -> Port 80 Gateway
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - pustani-app
+      - pustani-info
     networks:
       - pustani-net
 
