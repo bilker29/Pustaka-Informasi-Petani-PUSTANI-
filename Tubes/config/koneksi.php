@@ -1,10 +1,7 @@
 <?php
-// Prioritaskan Environment Variable (Standar Cloud)
-// Format: getenv('NAMA_VAR') ?: 'Nilai Default untuk Laptop/Dev';
-
-$host = getenv('DB_HOST') ?: 'localhost';
+$host = getenv('DB_HOST') ?: 'localhost'; 
 $user = getenv('DB_USER') ?: 'root';
-$pass = getenv('DB_PASSWORD') ?: ''; // Kosongkan default jika di XAMPP tidak ada pass
+$pass = getenv('DB_PASSWORD') ?: '';
 $db   = getenv('DB_NAME') ?: 'pustani_db';
 
 $koneksi = mysqli_connect($host, $user, $pass, $db);
