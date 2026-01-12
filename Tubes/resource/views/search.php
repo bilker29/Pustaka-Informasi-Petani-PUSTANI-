@@ -2,16 +2,22 @@
 session_start();
 require '../../config/koneksi.php';
 
-// Non-aktifkan reporting mysqli yang melempar exception (jika ingin gunakan try/catch, bisa diubah)
+// Non-aktifkan reporting mysqli
 mysqli_report(MYSQLI_REPORT_OFF);
 
-// Pesan untuk UI
+// --- [SOLUSI AMAN DI SINI] ---
+// Kita inisialisasi variabel supaya tidak ada error "Undefined variable"
+$keyword = "";
+$results = [];
+// -----------------------------
+
 $missing_table_message = '';
 $query_error_message = '';
-$results = [];
-$q = trim($_GET['q'] ?? '');
 
-// Proteksi: jika role admin dilarang (sama seperti halaman lain)
+// PERBAIKAN 1: Tangkap 'keyword' (sesuai name di form), bukan 'q'
+$keyword = trim($_GET['keyword'] ?? '');
+
+// Proteksi: jika role admin dilarang
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     header("Location: admin/dashboard.php");
     exit;
@@ -19,75 +25,50 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
 
 // Pastikan koneksi valid
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    $missing_table_message = 'Koneksi database tidak ditemukan. Periksa konfigurasi koneksi.';
+    $missing_table_message = 'Koneksi database tidak ditemukan.';
 } else {
-    // Cek keberadaan tabel articles dan users
+    // Cek tabel articles
     $checkArticles = $koneksi->query("SHOW TABLES LIKE 'articles'");
-    if ($checkArticles === false) {
-        $query_error_message = 'Gagal memeriksa tabel: ' . $koneksi->error;
-    } elseif ($checkArticles->num_rows === 0) {
-        $missing_table_message = "Tabel 'articles' tidak ditemukan di database. Pencarian tidak dapat dilakukan.";
-    } else {
-        // cek apakah tabel users ada (opsional, untuk menampilkan username)
+    if ($checkArticles && $checkArticles->num_rows > 0) {
+
         $checkUsers = $koneksi->query("SHOW TABLES LIKE 'users'");
         $hasUsers = ($checkUsers && $checkUsers->num_rows > 0);
 
-        // Jika ada query pencarian yang valid, proses pencarian
-        if ($q !== '') {
-            // Siapkan pattern pencarian
-            $like = '%' . $q . '%';
+        // Jika ada keyword, jalankan pencarian
+        if ($keyword !== '') {
+            $like = '%' . $keyword . '%';
 
+            // Pilih query tergantung ketersediaan tabel users
             if ($hasUsers) {
-                // Gunakan JOIN dengan prepared statement
                 $sql = "SELECT articles.id, articles.title, articles.image, articles.category, articles.created_at, users.username, users.role
                         FROM articles
                         JOIN users ON articles.user_id = users.id
                         WHERE articles.status = 'published' AND (articles.title LIKE ? OR articles.content LIKE ?)
                         ORDER BY articles.created_at DESC";
-                $stmt = $koneksi->prepare($sql);
-                if ($stmt) {
-                    $stmt->bind_param('ss', $like, $like);
-                    if ($stmt->execute()) {
-                        $res = $stmt->get_result();
-                        $results = $res->fetch_all(MYSQLI_ASSOC);
-                        $res->free();
-                    } else {
-                        error_log('Search execute error (with users): ' . $stmt->error);
-                        $query_error_message = 'Terjadi kesalahan saat mencari artikel. Silakan coba lagi.';
-                    }
-                    $stmt->close();
-                } else {
-                    error_log('Prepare failed (with users): ' . $koneksi->error);
-                    $query_error_message = 'Terjadi kesalahan server saat menyiapkan pencarian.';
-                }
             } else {
-                // Jika tabel users tidak ada, jalankan query tanpa JOIN
-                $sql = "SELECT id, title, image, category, created_at, content
-                        FROM articles
+                $sql = "SELECT id, title, image, category, created_at, content FROM articles
                         WHERE status = 'published' AND (title LIKE ? OR content LIKE ?)
                         ORDER BY created_at DESC";
-                $stmt = $koneksi->prepare($sql);
-                if ($stmt) {
-                    $stmt->bind_param('ss', $like, $like);
-                    if ($stmt->execute()) {
-                        $res = $stmt->get_result();
-                        $rows = $res->fetch_all(MYSQLI_ASSOC);
-                        // tambahkan username default 'Anonim' agar tampilan konsisten
-                        foreach ($rows as $r) {
+            }
+
+            $stmt = $koneksi->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param('ss', $like, $like);
+                if ($stmt->execute()) {
+                    $res = $stmt->get_result();
+                    // Simpan data ke Array $results
+                    $results = $res->fetch_all(MYSQLI_ASSOC);
+
+                    // Jika tabel users tidak ada, isi default username manual
+                    if (!$hasUsers) {
+                        foreach ($results as &$r) {
                             $r['username'] = 'Anonim';
                             $r['role'] = '';
-                            $results[] = $r;
                         }
-                        $res->free();
-                    } else {
-                        error_log('Search execute error (no users): ' . $stmt->error);
-                        $query_error_message = 'Terjadi kesalahan saat mencari artikel. Silakan coba lagi.';
                     }
-                    $stmt->close();
-                } else {
-                    error_log('Prepare failed (no users): ' . $koneksi->error);
-                    $query_error_message = 'Terjadi kesalahan server saat menyiapkan pencarian.';
+                    $res->free();
                 }
+                $stmt->close();
             }
         }
     }
@@ -127,70 +108,6 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             background: #ffffff;
             border-bottom: 1px solid #edf2f7;
             z-index: 1000;
-        }
-
-        .nav-profile-img {
-            width: 45px;
-            height: 45px;
-            object-fit: cover;
-            border-radius: 50%;
-            border: 2px solid #e2e8f0;
-        }
-
-        .custom-dropdown-btn {
-            border: none;
-            background: transparent;
-            padding: 0;
-        }
-
-        .dropdown-menu-custom {
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            padding: 10px 0;
-            min-width: 220px;
-            margin-top: 15px !important;
-        }
-
-        .dropdown-header-custom {
-            padding: 10px 20px;
-            font-weight: 700;
-            color: #64748b;
-            font-size: 0.95rem;
-            border-bottom: 1px solid #f1f5f9;
-            margin-bottom: 5px;
-        }
-
-        .dropdown-item {
-            padding: 10px 20px;
-            font-weight: 600;
-            color: #334155;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .dropdown-item:hover {
-            background-color: var(--bg-soft);
-            color: var(--primary-color);
-        }
-
-        .logout-item {
-            color: #ef4444 !important;
-        }
-
-        .search-btn-nav {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            color: var(--text-main);
-            padding: 0.5rem 1.25rem;
-            border-radius: 50px;
-            text-decoration: none;
-            font-size: 0.95rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
         }
 
         .search-header {
@@ -264,12 +181,6 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             padding: 5rem 0 2rem;
             margin-top: 5rem;
         }
-
-        .footer-logo {
-            height: 70px;
-            width: auto;
-            margin-bottom: 1.5rem;
-        }
     </style>
 </head>
 
@@ -291,13 +202,13 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     </section>
 
     <section class="container py-5">
-        <?php if ($keyword): ?>
+        <?php if (isset($keyword) && !empty($keyword)): ?>
             <p class="text-muted mb-4 fs-5">Menampilkan hasil untuk: <strong class="text-dark">"<?= htmlspecialchars($keyword); ?>"</strong></p>
         <?php endif; ?>
 
         <div class="row g-4">
-            <?php if (mysqli_num_rows($result) > 0) : ?>
-                <?php while ($row = mysqli_fetch_assoc($result)) :
+            <?php if (!empty($results)) : ?>
+                <?php foreach ($results as $row) :
                     $imgSrc = $row['image'];
                     if (!filter_var($imgSrc, FILTER_VALIDATE_URL)) {
                         $imgSrc = "../../public/img/img1/" . $imgSrc;
@@ -323,13 +234,15 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                             </div>
                         </div>
                     </div>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else : ?>
-                <div class="col-12 text-center py-5">
-                    <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" width="120" class="mb-3 opacity-75">
-                    <h4 class="fw-bold text-muted">Yah, tidak ditemukan artikel.</h4>
-                    <p class="text-muted">Coba gunakan kata kunci lain seperti "Padi", "Pupuk", atau "Hama".</p>
-                </div>
+                <?php if (!empty($keyword)): ?>
+                    <div class="col-12 text-center py-5">
+                        <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" width="120" class="mb-3 opacity-75">
+                        <h4 class="fw-bold text-muted">Yah, tidak ditemukan artikel.</h4>
+                        <p class="text-muted">Coba gunakan kata kunci lain seperti "Padi", "Pupuk", atau "Hama".</p>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
     </section>
