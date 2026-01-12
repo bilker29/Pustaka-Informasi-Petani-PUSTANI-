@@ -6,8 +6,8 @@
 
 // Gunakan 127.0.0.1 untuk menghindari error "No such file or directory" (socket error)
 $host = getenv('DB_HOST') ?: '127.0.0.1';
-$user = getenv('DB_USER') ?: 'root';
-$pass = getenv('DB_PASSWORD') ?: '';
+$user = getenv('DB_USER') ?: 'docker_user';
+$pass = getenv('DB_PASSWORD') ?: 'docker_pass';
 $db   = getenv('DB_NAME') ?: 'pustani_db';
 
 // Mengatur agar mysqli melempar exception saat terjadi error
