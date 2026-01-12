@@ -1,32 +1,30 @@
 version: '3.8'
 
 services:
-  # === MICROSERVICE 1: APP UTAMA ===
   pustani-app:
     build: ./Tubes
-    container_name: service-app
+    # Gunakan variabel agar nama container dinamis (misal: pustani-app-prod / pustani-app-dev)
+    container_name: ${APP_NAME}-app 
     restart: always
     environment:
-      - APP_ENV=PROD
-      - DB_HOST=pustani-db    # <--- SUDAH DIPERBAIKI (Pakai Strip)
+      - APP_ENV=${APP_ENV} # PROD atau DEV
+      - DB_HOST=${APP_NAME}-db
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
       - DB_NAME=pustani_db
     networks:
       - pustani-net
 
-  # === MICROSERVICE 2: INFO SERVICE ===
   pustani-info:
     build: ./info-service
-    container_name: service-info
+    container_name: ${APP_NAME}-info
     restart: always
     networks:
       - pustani-net
 
-  # === MICROSERVICE 3: DATABASE ===
   pustani-db:
     image: mariadb:10.6
-    container_name: service-db
+    container_name: ${APP_NAME}-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
@@ -34,19 +32,22 @@ services:
       MYSQL_USER: docker_user
       MYSQL_PASSWORD: docker_pass
     volumes:
-      - db_data:/var/lib/mysql
+      # Volume dibedakan agar data Dev tidak mencampuri data Prod
+      - ${APP_NAME}_db_data:/var/lib/mysql
       - ./Tubes/database/pustani_db.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:               
-      - "3306:3306"
+    ports:
+      # Port database tidak perlu di-expose ke host (akses internal saja via network)
+      # Kecuali butuh akses remote, hapus section ports ini agar aman
+      - "3306" 
     networks:
       - pustani-net
 
-  # === API GATEWAY (NGINX) ===
   api-gateway:
     image: nginx:latest
-    container_name: gateway
+    container_name: ${APP_NAME}-gateway
     ports:
-      - "80:80"
+      # Port luar dibuat dinamis (80 untuk Prod, 8080 untuk Dev)
+      - "${HOST_PORT}:80"
     volumes:
       - ./infra/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
@@ -55,46 +56,13 @@ services:
     networks:
       - pustani-net
 
-  # === MONITORING STACK ===
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: monitoring-cadvisor
-    ports:
-      - "8080:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks:
-      - pustani-net
+# ... (Monitoring section bisa dihapus untuk Dev atau dibuat dinamis serupa) ...
 
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: monitoring-prometheus
-    volumes:
-      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    networks:
-      - pustani-net
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: monitoring-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    depends_on:
-      - prometheus
-    networks:
-      - pustani-net
-
-# === BAGIAN INI RATA KIRI (ROOT LEVEL) ===
 networks:
   pustani-net:
     driver: bridge
 
 volumes:
-  db_data:
+  # Volume dinamis berdasarkan nama project
+  pustani_prod_db_data:
+  pustani_dev_db_data:

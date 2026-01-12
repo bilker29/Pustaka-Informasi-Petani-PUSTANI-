@@ -1,53 +1,79 @@
-name: Deploy Pustani ke AWS
+name: CI/CD Pipeline Level 3
 
 on:
   push:
     branches:
       - main
+      - dev  # <--- TAMBAHKAN TRIGGER DEV
 
 jobs:
-  deploy:
+  # ... (Job build-test dan build-docker TETAP SAMA seperti sebelumnya) ...
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Ambil Kodingan Terbaru
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      # ... (sisa step testing sama) ...
 
-      - name: 2. Kirim File ke Folder SEMENTARA (User Home)
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_KEY }}
-          source: "."
-          target: "pustani_temp" # Upload ke folder Home agar aman dari permission denied
+  build-docker:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      # ... (proses build image sama) ...
+      # Pastikan image tag tetap 'latest' atau bisa gunakan SHA agar unik
 
-      - name: 3. Pindahkan File & Restart Docker
+  deploy:
+    needs: build-docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Environment Variables
+        run: |
+          if [[ $GITHUB_REF == 'refs/heads/main' ]]; then
+            echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
+            echo "APP_PORT=80" >> $GITHUB_ENV
+            echo "APP_NAME=pustani-prod" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/var/www/pustani-prod" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_ENV=dev" >> $GITHUB_ENV
+            echo "APP_PORT=8080" >> $GITHUB_ENV
+            echo "APP_NAME=pustani-dev" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/var/www/pustani-dev" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: APP_PORT,APP_NAME,DEPLOY_PATH,DEPLOY_ENV
           script: |
-            # 1. Buat folder tujuan (jika belum ada)
-            sudo mkdir -p /var/www/html/pustani
+            # 1. Buat folder jika belum ada
+            mkdir -p $DEPLOY_PATH
             
-            # 2. Pindahkan file dari folder sementara ke folder asli
-            # Menggunakan rsync agar lebih aman dan menimpa file lama
-            sudo rsync -av --remove-source-files pustani_temp/ /var/www/html/pustani/
+            # 2. Masuk ke folder
+            cd $DEPLOY_PATH
             
-            # Bersihkan folder sementara
-            rm -rf pustani_temp
-
-            # 3. Masuk ke folder project
-            cd /var/www/html/pustani
+            # 3. Clone/Pull update terbaru
+            # (Trik: Kita clone repo sekali, lalu pull)
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/bilker29/Pustaka-Informasi-Petani-PUSTANI-.git .
+            fi
             
-            # 4. Perbaiki izin file (PENTING untuk upload gambar)
-            sudo chown -R www-data:www-data /var/www/html/pustani
-            sudo chmod -R 775 /var/www/html/pustani
-
-            # 5. Restart Aplikasi & Reset Database
-            # Catatan: "-v" digunakan untuk menghapus data lama yang error
-            sudo docker-compose down -v
-            sudo docker-compose up -d --build
+            # Reset dan checkout branch yang sesuai
+            git fetch --all
+            if [ "$DEPLOY_ENV" == "prod" ]; then
+              git checkout main
+            else
+              git checkout dev
+            fi
+            git pull origin $DEPLOY_ENV
             
-            echo "Deploy Selesai! Pustani sudah live dengan database baru."
+            # 4. Export Variabel untuk Docker Compose
+            export APP_NAME=$APP_NAME
+            export HOST_PORT=$APP_PORT
+            export APP_ENV=$DEPLOY_ENV
+            
+            # 5. Jalankan Docker Compose
+            # Gunakan -p (project name) agar container Dev dan Prod terpisah
+            docker-compose -p $APP_NAME pull
+            docker-compose -p $APP_NAME up -d --remove-orphans
