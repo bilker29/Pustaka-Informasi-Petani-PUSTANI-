@@ -19,8 +19,14 @@ if ($data_user['role'] === 'admin') {
     exit;
 }
 
-// Jika bukan Expert -> Tolak dengan Alert Konfirmasi
-if ($data_user['role'] !== 'expert') {
+$cek_user = mysqli_query($koneksi, "SELECT role FROM users WHERE id = '$id_user'");
+if (!$cek_user || mysqli_num_rows($cek_user) === 0) {
+    // Handle jika user tidak valid/dihapus saat sesi masih aktif
+    session_destroy();
+    header("Location: login.php");
+    exit;
+}
+$data_user = mysqli_fetch_assoc($cek_user);
 ?>
     <!DOCTYPE html>
     <html lang="id">

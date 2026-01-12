@@ -2,82 +2,75 @@
 session_start();
 require '../../config/koneksi.php';
 
-// Pesan untuk UI
-$missing_users_message = '';
-$error_message = '';
-$success_message = '';
+// Inisialisasi variabel status untuk SweetAlert
+$register_status = null;
+$error_msg = '';
 
 // Pastikan koneksi mysqli tersedia
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    $missing_users_message = 'Koneksi database tidak ditemukan. Periksa konfigurasi koneksi.';
+    $register_status = 'error';
+    $error_msg = 'Koneksi database bermasalah.';
 } else {
-    // Periksa keberadaan tabel 'users' sebelum menjalankan query
+    // Cek tabel users untuk memastikan database siap
     $check = mysqli_query($koneksi, "SHOW TABLES LIKE 'users'");
-    if ($check === false) {
-        // Jika gagal menjalankan SHOW TABLES, log error dan tampilkan pesan aman
-        error_log('Error checking users table: ' . mysqli_error($koneksi));
-        $missing_users_message = 'Terjadi kesalahan saat memeriksa tabel pengguna. Silakan hubungi admin.';
-    } elseif (mysqli_num_rows($check) === 0) {
-        $missing_users_message = "Tabel 'users' tidak ditemukan di database. Registrasi tidak dapat dilakukan.";
+    if ($check === false || mysqli_num_rows($check) === 0) {
+        $register_status = 'error';
+        $error_msg = "Tabel database 'users' tidak ditemukan.";
     } else {
-        // Tabel ada -> proses form registrasi jika POST
+        // Proses Form saat tombol Register ditekan
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // Ambil dan bersihkan input
-            $name = trim($_POST['name'] ?? '');
+            // Ambil input sesuai atribut name di HTML
+            $username = trim($_POST['username'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $password = $_POST['password'] ?? '';
-            $password_confirm = $_POST['password_confirm'] ?? '';
+            $confirm_password = $_POST['confirm_password'] ?? ''; 
 
-            // Validasi dasar
-            if ($name === '' || $email === '' || $password === '' || $password_confirm === '') {
-                $error_message = 'Semua field harus diisi.';
+            // Validasi Input
+            if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
+                $register_status = 'error';
+                $error_msg = 'Semua kolom harus diisi.';
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $error_message = 'Format email tidak valid.';
-            } elseif ($password !== $password_confirm) {
-                $error_message = 'Konfirmasi password tidak cocok.';
+                $register_status = 'error';
+                $error_msg = 'Format email tidak valid.';
+            } elseif ($password !== $confirm_password) {
+                $register_status = 'password_mismatch';
             } elseif (strlen($password) < 6) {
-                $error_message = 'Password minimal 6 karakter.';
+                $register_status = 'error';
+                $error_msg = 'Password minimal 6 karakter.';
             } else {
-                // Cek apakah email sudah terdaftar (menggunakan prepared statement)
+                // Cek apakah Email sudah terdaftar
                 $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
-                if ($stmt) {
-                    $stmt->bind_param("s", $email);
-                    if ($stmt->execute()) {
-                        $stmt->store_result();
-                        if ($stmt->num_rows > 0) {
-                            $error_message = 'Email sudah terdaftar.';
-                        } else {
-                            // Insert user baru
-                            $stmt->close();
-                            $hashed = password_hash($password, PASSWORD_DEFAULT);
-                            // Sesuaikan kolom sesuai struktur tabel users Anda
-                            $insert = $koneksi->prepare("INSERT INTO users (name, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())");
-                            if ($insert) {
-                                $role = 'user';
-                                $insert->bind_param("ssss", $name, $email, $hashed, $role);
-                                if ($insert->execute()) {
-                                    $success_message = 'Registrasi berhasil. Silakan login.';
-                                } else {
-                                    error_log('Register insert error: ' . $insert->error);
-                                    $error_message = 'Gagal membuat akun. Silakan coba lagi nanti.';
-                                }
-                                $insert->close();
-                            } else {
-                                error_log('Prepare insert failed: ' . $koneksi->error);
-                                $error_message = 'Gagal menyiapkan pendaftaran. Silakan coba lagi nanti.';
-                            }
-                        }
-                    } else {
-                        error_log('Execute select failed: ' . $stmt->error);
-                        $error_message = 'Gagal memproses pendaftaran. Silakan coba lagi.';
-                    }
-                    if ($stmt->errno === 0) {
-                        // jika belum ditutup (safety)
-                        @$stmt->close();
-                    }
+                $stmt->bind_param("s", $email);
+                $stmt->execute();
+                $stmt->store_result();
+                
+                if ($stmt->num_rows > 0) {
+                    $register_status = 'email_exist';
                 } else {
-                    error_log('Prepare select failed: ' . $koneksi->error);
-                    $error_message = 'Terjadi kesalahan server. Silakan coba lagi nanti.';
+                    $stmt->close();
+                    
+                    // Enkripsi Password
+                    $hashed = password_hash($password, PASSWORD_DEFAULT);
+                    $role = 'user';
+                    
+                    // Insert Data User Baru
+                    // Kita isi kolom 'name' dengan value 'username' juga karena di form tidak ada input nama lengkap
+                    $insert = $koneksi->prepare("INSERT INTO users (username, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+                    
+                    if ($insert) {
+                        $insert->bind_param("sssss", $username, $username, $email, $hashed, $role);
+                        if ($insert->execute()) {
+                            $register_status = 'success';
+                        } else {
+                            $register_status = 'error';
+                            $error_msg = 'Gagal menyimpan ke database.';
+                            error_log('Register DB Error: ' . $insert->error);
+                        }
+                        $insert->close();
+                    } else {
+                        $register_status = 'error';
+                        $error_msg = 'Terjadi kesalahan sistem (Query Error).';
+                    }
                 }
             }
         }
@@ -346,7 +339,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
         <?php elseif ($register_status == "error") : ?>
             Swal.fire({
                 title: 'Terjadi Kesalahan',
-                text: 'Gagal mendaftar: <?= $error_msg; ?>',
+                text: '<?= htmlspecialchars($error_msg); ?>',
                 icon: 'error',
                 confirmButtonColor: '#d33'
             });
