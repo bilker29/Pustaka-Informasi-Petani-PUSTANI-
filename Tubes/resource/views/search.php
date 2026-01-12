@@ -2,11 +2,10 @@
 session_start();
 require '../../config/koneksi.php';
 
-// Non-aktifkan reporting mysqli
+
 mysqli_report(MYSQLI_REPORT_OFF);
 
-// --- [SOLUSI AMAN DI SINI] ---
-// Kita inisialisasi variabel supaya tidak ada error "Undefined variable"
+
 $keyword = "";
 $results = [];
 // -----------------------------
@@ -14,31 +13,26 @@ $results = [];
 $missing_table_message = '';
 $query_error_message = '';
 
-// PERBAIKAN 1: Tangkap 'keyword' (sesuai name di form), bukan 'q'
 $keyword = trim($_GET['keyword'] ?? '');
 
-// Proteksi: jika role admin dilarang
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     header("Location: admin/dashboard.php");
     exit;
 }
 
-// Pastikan koneksi valid
+
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     $missing_table_message = 'Koneksi database tidak ditemukan.';
 } else {
-    // Cek tabel articles
     $checkArticles = $koneksi->query("SHOW TABLES LIKE 'articles'");
     if ($checkArticles && $checkArticles->num_rows > 0) {
 
         $checkUsers = $koneksi->query("SHOW TABLES LIKE 'users'");
         $hasUsers = ($checkUsers && $checkUsers->num_rows > 0);
 
-        // Jika ada keyword, jalankan pencarian
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
 
-            // Pilih query tergantung ketersediaan tabel users
             if ($hasUsers) {
                 $sql = "SELECT articles.id, articles.title, articles.image, articles.category, articles.created_at, users.username, users.role
                         FROM articles
@@ -56,10 +50,8 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                 $stmt->bind_param('ss', $like, $like);
                 if ($stmt->execute()) {
                     $res = $stmt->get_result();
-                    // Simpan data ke Array $results
                     $results = $res->fetch_all(MYSQLI_ASSOC);
 
-                    // Jika tabel users tidak ada, isi default username manual
                     if (!$hasUsers) {
                         foreach ($results as &$r) {
                             $r['username'] = 'Anonim';
