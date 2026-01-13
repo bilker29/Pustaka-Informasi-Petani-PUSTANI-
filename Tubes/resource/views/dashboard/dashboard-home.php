@@ -26,7 +26,7 @@ $base_path_img = "../../public/img/artikelGambar/";
 <!-- Welcome Card -->
 <div class="welcome-card animate-in">
     <div class="welcome-content">
-        <h2 class="welcome-title">Selamat Datang Kembali, <?= htmlspecialchars($username); ?>! 👋</h2>
+        <h2 class="welcome-title">Selamatt Datang Kembali, <?= htmlspecialchars($username); ?>! 👋</h2>
         <p class="welcome-subtitle">Mari berbagi pengetahuan dan pengalaman Anda dalam bidang pertanian kepada masyarakat luas.</p>
     </div>
 
