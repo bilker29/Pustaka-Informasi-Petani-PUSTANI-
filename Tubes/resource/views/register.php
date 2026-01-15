@@ -25,7 +25,7 @@ require_once $path_koneksi;
 
 // Memastikan variabel $koneksi benar-benar ada
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    die("Fatal Error: Koneksi database tidak terdeteksi. Periksa file koneksi.php Anda.");
+    die("Fatal Error: Koneksi database tidak terdeteksi. Periksa file koneksi.php Anda (pastikan nama variabelnya adalah \$koneksi).");
 }
 
 // Matikan laporan ralat otomatis agar kita bisa menangkapnya sendiri untuk SweetAlert
@@ -51,102 +51,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_msg = 'Password minimal harus 6 karakter.';
     } else {
         try {
-            // 2. CEK DUPLIKASI DATA
-            $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
-            $stmt->bind_param("ss", $email, $username);
-            $stmt->execute();
-            $result = $stmt->get_result();
+            // 2. INSPEKSI TABEL (Mendeteksi kolom yang benar-benar ada di database)
+            $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
+            if (!$res_cols) {
+                throw new Exception("Gagal membaca struktur tabel 'users': " . $koneksi->error);
+            }
             
-            if ($result->num_rows > 0) {
-                $register_status = 'email_exist';
-                $stmt->close();
+            $existing_columns = [];
+            while ($col = $res_cols->fetch_assoc()) {
+                $existing_columns[$col['Field']] = [
+                    'null'    => $col['Null'],
+                    'default' => $col['Default'],
+                    'extra'   => $col['Extra']
+                ];
+            }
+
+            // 3. CEK DUPLIKASI DATA
+            // Kita harus mengecek kolom email (pasti ada) dan username/name (jika ada)
+            $check_sql = "SELECT id FROM users WHERE email = ?";
+            if (isset($existing_columns['username'])) {
+                $check_sql .= " OR username = ?";
+            } elseif (isset($existing_columns['name'])) {
+                $check_sql .= " OR name = ?";
+            }
+            $check_sql .= " LIMIT 1";
+
+            $stmt_check = $koneksi->prepare($check_sql);
+            if (isset($existing_columns['username']) || isset($existing_columns['name'])) {
+                $stmt_check->bind_param("ss", $email, $username);
             } else {
-                $stmt->close();
+                $stmt_check->bind_param("s", $email);
+            }
+            
+            $stmt_check->execute();
+            if ($stmt_check->get_result()->num_rows > 0) {
+                $register_status = 'email_exist';
+                $stmt_check->close();
+            } else {
+                $stmt_check->close();
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $role = 'user';
 
-                // 3. INSPEKSI TABEL (Mendeteksi kolom wajib dan tipe datanya)
-                $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
-                $existing_columns = [];
-                while ($col = $res_cols->fetch_assoc()) {
-                    $existing_columns[$col['Field']] = [
-                        'type'    => $col['Type'],
-                        'null'    => $col['Null'],
-                        'default' => $col['Default'],
-                        'key'     => $col['Key'],
-                        'extra'   => $col['Extra']
-                    ];
+                // 4. SUSUN QUERY INSERT SECARA DINAMIS
+                $fields = [];
+                $placeholders = [];
+                $types = "";
+                $params = [];
+
+                // Pemetaan otomatis input form ke kolom database
+                if (isset($existing_columns['username'])) {
+                    $fields[] = 'username'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
+                }
+                if (isset($existing_columns['name'])) {
+                    $fields[] = 'name'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
+                }
+                if (isset($existing_columns['email'])) {
+                    $fields[] = 'email'; $placeholders[] = '?'; $types .= "s"; $params[] = $email;
+                }
+                if (isset($existing_columns['password'])) {
+                    $fields[] = 'password'; $placeholders[] = '?'; $types .= "s"; $params[] = $hashed;
+                }
+                if (isset($existing_columns['role'])) {
+                    $fields[] = 'role'; $placeholders[] = '?'; $types .= "s"; $params[] = $role;
                 }
 
-                // Susun query secara otomatis
-                $fields = ['username', 'email', 'password'];
-                $placeholders = ['?', '?', '?'];
-                $types = "sss";
-                $params = [$username, $email, $hashed];
+                // Tambahkan Laravel Timestamps jika ada
+                if (isset($existing_columns['created_at'])) {
+                    $fields[] = 'created_at'; $placeholders[] = 'NOW()';
+                }
+                if (isset($existing_columns['updated_at'])) {
+                    $fields[] = 'updated_at'; $placeholders[] = 'NOW()';
+                }
 
-                /** * PENANGANAN KOLOM DINAMIS 
-                 * Mengisi kolom yang bersifat NOT NULL dan tidak punya default value
-                 */
-                foreach ($existing_columns as $fieldName => $info) {
-                    // Lewati kolom yang sudah dimasukkan atau yang auto-increment (seperti ID)
-                    if (in_array($fieldName, $fields) || strpos($info['extra'], 'auto_increment') !== false) {
-                        continue;
-                    }
+                // Tambahkan token pengingat jika ada
+                if (isset($existing_columns['remember_token'])) {
+                    $fields[] = 'remember_token'; $placeholders[] = '?'; $types .= "s"; $params[] = substr(bin2hex(random_bytes(10)), 0, 10);
+                }
 
-                    // Logika pengisian kolom tambahan jika ditemukan di DB
-                    if ($fieldName === 'name') {
-                        $fields[] = 'name';
-                        $placeholders[] = '?';
-                        $types .= "s";
-                        $params[] = $username;
-                    } 
-                    elseif ($fieldName === 'role') {
-                        $fields[] = 'role';
-                        $placeholders[] = '?';
-                        $types .= "s";
-                        $params[] = $role;
-                    }
-                    elseif ($fieldName === 'created_at') {
-                        $fields[] = 'created_at';
-                        $placeholders[] = 'NOW()';
-                    }
-                    elseif ($fieldName === 'updated_at') {
-                        $fields[] = 'updated_at';
-                        $placeholders[] = 'NOW()';
-                    }
-                    elseif ($fieldName === 'remember_token') {
-                        $fields[] = 'remember_token';
-                        $placeholders[] = '?';
-                        $types .= "s";
-                        $params[] = substr(bin2hex(random_bytes(10)), 0, 10);
-                    }
-                    // Jika ada kolom NOT NULL tanpa default yang belum tertangani, beri nilai kosong agar tidak error
-                    elseif ($info['null'] === 'NO' && $info['default'] === NULL) {
-                        $fields[] = $fieldName;
-                        $placeholders[] = '?';
-                        $types .= "s";
-                        $params[] = ""; 
+                // Cek apakah ada kolom NOT NULL tanpa default yang terlewat
+                foreach ($existing_columns as $colName => $info) {
+                    if (!in_array($colName, $fields) && strpos($info['extra'], 'auto_increment') === false) {
+                        if ($info['null'] === 'NO' && $info['default'] === NULL) {
+                            $fields[] = $colName; $placeholders[] = '?'; $types .= "s"; $params[] = ""; 
+                        }
                     }
                 }
 
-                // Bentuk Query Final
-                $sql = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
-                $insert = $koneksi->prepare($sql);
+                // Eksekusi Insert
+                $sql_insert = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                $stmt_insert = $koneksi->prepare($sql_insert);
                 
-                if ($insert) {
-                    $insert->bind_param($types, ...$params);
+                if ($stmt_insert) {
+                    if (!empty($params)) {
+                        $stmt_insert->bind_param($types, ...$params);
+                    }
                     
-                    if ($insert->execute()) {
+                    if ($stmt_insert->execute()) {
                         $register_status = 'success';
                     } else {
                         $register_status = 'error';
-                        // Pesan error spesifik jika gagal eksekusi (misal: ID tidak auto-increment)
-                        $error_msg = "Database Error: " . $insert->error;
+                        $error_msg = "Database Error: " . $stmt_insert->error;
                     }
-                    $insert->close();
+                    $stmt_insert->close();
                 } else {
                     $register_status = 'error';
-                    $error_msg = "Gagal memproses permintaan: " . $koneksi->error;
+                    $error_msg = "Gagal memproses pendaftaran: " . $koneksi->error;
                 }
             }
         } catch (Exception $e) {
