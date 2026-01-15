@@ -55,14 +55,12 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $role = 'user';
                 
-                // INSERT DATA
-                // Catatan: Pastikan tabel users Anda memiliki kolom: username, name, email, password, role, created_at
-                $sql = "INSERT INTO users (username, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
+                // INSERT DATA - Menghapus kolom 'name' agar sesuai dengan database PUSTANI Anda
+                $sql = "INSERT INTO users (username, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())";
                 $insert = $koneksi->prepare($sql);
 
                 if ($insert) {
-                    // Menggunakan username sebagai 'name' sementara
-                    $insert->bind_param("sssss", $username, $username, $email, $hashed, $role);
+                    $insert->bind_param("ssss", $username, $email, $hashed, $role);
                     
                     if ($insert->execute()) {
                         $register_status = 'success';
