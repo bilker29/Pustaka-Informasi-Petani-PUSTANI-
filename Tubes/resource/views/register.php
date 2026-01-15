@@ -58,8 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             /**
              * 3. INSPEKSI STRUKTUR TABEL SECARA REAL-TIME
-             * Proyek PUSTANI berbasis Laravel seringkali memiliki struktur kolom:
-             * id, name, email, password, role, created_at, updated_at
              */
             $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
             $db_columns = [];
@@ -74,18 +72,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /**
              * 4. CEK DUPLIKASI DATA
              * Laravel biasanya menggunakan 'email' sebagai primary identifier.
-             * Kami juga mengecek 'username' atau 'name' jika tersedia.
+             * Kami juga mengecek 'username' atau 'name' jika tersedia di tabel.
              */
-            $identity_field = isset($db_columns['username']) ? 'username' : (isset($db_columns['name']) ? 'name' : 'email');
-            
             $sql_check = "SELECT id FROM users WHERE email = ?";
-            if ($identity_field !== 'email') {
+            $identity_field = '';
+            
+            if (isset($db_columns['username'])) {
+                $identity_field = 'username';
+            } elseif (isset($db_columns['name'])) {
+                $identity_field = 'name';
+            }
+
+            if ($identity_field !== '') {
                 $sql_check .= " OR $identity_field = ?";
             }
             $sql_check .= " LIMIT 1";
 
             $stmt_check = $koneksi->prepare($sql_check);
-            if ($identity_field !== 'email') {
+            if ($identity_field !== '') {
                 $stmt_check->bind_param("ss", $email, $username);
             } else {
                 $stmt_check->bind_param("s", $email);
@@ -104,31 +108,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 /**
                  * 5. PENYUSUNAN QUERY DINAMIS
-                 * Menyesuaikan field secara otomatis dengan skema database.
+                 * Perbaikan: Inisialisasi kosong untuk menghindari error "Unknown Column"
                  */
                 $fields = [];
                 $placeholders = [];
                 $types = "";
                 $params = [];
 
-                // Mapping kolom username/name
-                if (isset($db_columns['username'])) {
-                    $fields[] = 'username'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
-                }
-                if (isset($db_columns['name'])) {
-                    $fields[] = 'name'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
-                }
+                // Masukkan kolom hanya jika ada di database
                 if (isset($db_columns['email'])) {
                     $fields[] = 'email'; $placeholders[] = '?'; $types .= "s"; $params[] = $email;
                 }
                 if (isset($db_columns['password'])) {
                     $fields[] = 'password'; $placeholders[] = '?'; $types .= "s"; $params[] = $hashed;
                 }
+                if (isset($db_columns['username'])) {
+                    $fields[] = 'username'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
+                }
+                if (isset($db_columns['name'])) {
+                    $fields[] = 'name'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
+                }
                 if (isset($db_columns['role'])) {
                     $fields[] = 'role'; $placeholders[] = '?'; $types .= "s"; $params[] = $role;
                 }
 
-                // Penanganan Timestamps (Laravel Style: created_at & updated_at)
+                // Penanganan Timestamps (Laravel Style)
                 if (isset($db_columns['created_at'])) {
                     $fields[] = 'created_at'; $placeholders[] = 'NOW()';
                 }
@@ -138,7 +142,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 /**
                  * 6. PENANGANAN KOLOM 'NOT NULL' TANPA DEFAULT
-                 * Memberikan nilai default kosong untuk kolom wajib yang tidak ada di form.
                  */
                 foreach ($db_columns as $colName => $info) {
                     if (!in_array($colName, $fields) && $info['extra'] !== 'auto_increment') {
@@ -146,6 +149,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $fields[] = $colName; $placeholders[] = '?'; $types .= "s"; $params[] = ""; 
                         }
                     }
+                }
+
+                if (empty($fields)) {
+                    throw new Exception("Tidak ada kolom yang cocok ditemukan di tabel 'users'.");
                 }
 
                 $sql_insert = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
@@ -162,7 +169,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (mysqli_sql_exception $e) {
             $register_status = 'error';
-            // Menangkap pesan error asli dari MySQL untuk memudahkan perbaikan di sisi pengguna
             $error_msg = "Database Error: " . $e->getMessage();
         } catch (Exception $e) {
             $register_status = 'error';
