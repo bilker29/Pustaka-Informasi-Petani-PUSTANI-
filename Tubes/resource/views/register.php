@@ -47,11 +47,10 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                         $register_status = 'email_exist';
                     } else {
                         $stmt->close();
+                        // Gunakan password_hash yang standar untuk keamanan
                         $hashed = password_hash($password, PASSWORD_DEFAULT);
-                        $role = 'user';
-
-                        // 2. Deteksi otomatis kolom yang tersedia di tabel users
-                        // Penting: PUSTANI biasanya menggunakan skema Laravel (ada updated_at)
+                        
+                        // 2. Ambil informasi kolum database untuk sinkronisasi otomatis
                         $columns_query = $koneksi->query("SHOW COLUMNS FROM users");
                         $existing_columns = [];
                         if ($columns_query) {
@@ -60,33 +59,36 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                             }
                         }
 
-                        // Membangun query secara dinamis berdasarkan kolom yang benar-benar ada
-                        $fields = ['username', 'email', 'password', 'role', 'created_at'];
-                        $placeholders = ['?', '?', '?', '?', 'NOW()'];
-                        $types = "ssss";
-                        $params = [$username, $email, $hashed, $role];
+                        // Menentukan field dasar yang biasanya ada di PUSTANI
+                        $fields = ['username', 'email', 'password'];
+                        $placeholders = ['?', '?', '?'];
+                        $types = "sss";
+                        $params = [$username, $email, $hashed];
 
-                        // Tambahkan 'name' jika ada (biasanya wajib di Laravel/PUSTANI)
-                        if (in_array('name', $existing_columns)) {
-                            array_splice($fields, 1, 0, 'name');
-                            array_splice($placeholders, 1, 0, '?');
-                            $types = "s" . $types;
-                            array_splice($params, 1, 0, $username); 
+                        // Tambahkan 'role' jika ada di tabel
+                        if (in_array('role', $existing_columns)) {
+                            $fields[] = 'role';
+                            $placeholders[] = '?';
+                            $types .= "s";
+                            $params[] = 'user';
                         }
 
-                        // Tambahkan 'updated_at' jika ada (Skema Laravel mewajibkan ini)
+                        // Tambahkan 'name' jika ada (beberapa versi PUSTANI mewajibkan ini)
+                        if (in_array('name', $existing_columns)) {
+                            $fields[] = 'name';
+                            $placeholders[] = '?';
+                            $types .= "s";
+                            $params[] = $username; 
+                        }
+
+                        // Tambahkan timestamps jika tabel menggunakan skema Laravel/Modern
+                        if (in_array('created_at', $existing_columns)) {
+                            $fields[] = 'created_at';
+                            $placeholders[] = 'NOW()';
+                        }
                         if (in_array('updated_at', $existing_columns)) {
                             $fields[] = 'updated_at';
                             $placeholders[] = 'NOW()';
-                            // Tidak perlu params/types karena menggunakan fungsi SQL NOW()
-                        }
-
-                        // Tambahkan 'status' jika ada
-                        if (in_array('status', $existing_columns)) {
-                            $fields[] = 'status';
-                            $placeholders[] = '?';
-                            $types .= "s";
-                            $params[] = 'active';
                         }
 
                         $sql = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
@@ -99,22 +101,22 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                                 $register_status = 'success';
                             } else {
                                 $register_status = 'error';
-                                // Tampilkan ralat spesifik untuk debugging (misal: ralat duplikat atau kolom hilang)
-                                $error_msg = 'Gagal menyimpan data: ' . $insert->error;
+                                // Tampilkan pesan ralat spesifik dari database (misal: Duplicate Entry atau Kolum Hilang)
+                                $error_msg = 'Database Error: ' . $insert->error;
                             }
                             $insert->close();
                         } else {
                             $register_status = 'error';
-                            $error_msg = 'Kesalahan sistem database (Query): ' . $koneksi->error;
+                            $error_msg = 'Gagal menyiapkan perintah simpan: ' . $koneksi->error;
                         }
                     }
                 } else {
                     $register_status = 'error';
-                    $error_msg = 'Gagal menyiapkan query: ' . $koneksi->error;
+                    $error_msg = 'Gagal melakukan pengecekan data: ' . $koneksi->error;
                 }
             } catch (Exception $e) {
                 $register_status = 'error';
-                $error_msg = 'Ralat sistem: ' . $e->getMessage();
+                $error_msg = 'Ralat Sistem: ' . $e->getMessage();
             }
         }
     }
