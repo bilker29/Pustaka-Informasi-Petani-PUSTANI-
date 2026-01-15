@@ -51,6 +51,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                         $role = 'user';
 
                         // 2. Deteksi otomatis kolom yang tersedia di tabel users
+                        // Penting: PUSTANI biasanya menggunakan skema Laravel (ada updated_at)
                         $columns_query = $koneksi->query("SHOW COLUMNS FROM users");
                         $existing_columns = [];
                         if ($columns_query) {
@@ -59,21 +60,28 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                             }
                         }
 
-                        // Membangun query secara dinamis berdasarkan kolom yang ada
+                        // Membangun query secara dinamis berdasarkan kolom yang benar-benar ada
                         $fields = ['username', 'email', 'password', 'role', 'created_at'];
                         $placeholders = ['?', '?', '?', '?', 'NOW()'];
                         $types = "ssss";
                         $params = [$username, $email, $hashed, $role];
 
-                        // Tambahkan 'name' jika kolom tersebut ada di database (untuk menghindari ralat 'Field name doesn't have a default value')
+                        // Tambahkan 'name' jika ada (biasanya wajib di Laravel/PUSTANI)
                         if (in_array('name', $existing_columns)) {
                             array_splice($fields, 1, 0, 'name');
                             array_splice($placeholders, 1, 0, '?');
                             $types = "s" . $types;
-                            array_splice($params, 1, 0, $username); // Gunakan username sebagai nama default
+                            array_splice($params, 1, 0, $username); 
                         }
 
-                        // Tambahkan 'status' jika ada di database (biasanya default 'active')
+                        // Tambahkan 'updated_at' jika ada (Skema Laravel mewajibkan ini)
+                        if (in_array('updated_at', $existing_columns)) {
+                            $fields[] = 'updated_at';
+                            $placeholders[] = 'NOW()';
+                            // Tidak perlu params/types karena menggunakan fungsi SQL NOW()
+                        }
+
+                        // Tambahkan 'status' jika ada
                         if (in_array('status', $existing_columns)) {
                             $fields[] = 'status';
                             $placeholders[] = '?';
@@ -91,7 +99,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                                 $register_status = 'success';
                             } else {
                                 $register_status = 'error';
-                                // Memberikan pesan ralat spesifik dari MySQL agar kita tahu apa yang salah
+                                // Tampilkan ralat spesifik untuk debugging (misal: ralat duplikat atau kolom hilang)
                                 $error_msg = 'Gagal menyimpan data: ' . $insert->error;
                             }
                             $insert->close();
