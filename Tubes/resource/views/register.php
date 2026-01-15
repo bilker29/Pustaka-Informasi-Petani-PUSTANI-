@@ -70,8 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $existing_columns = [];
                 while ($col = $res_cols->fetch_assoc()) {
                     $existing_columns[$col['Field']] = [
-                        'null' => $col['Null'],
-                        'default' => $col['Default']
+                        'type'    => $col['Type'],
+                        'null'    => $col['Null'],
+                        'default' => $col['Default'],
+                        'key'     => $col['Key'],
+                        'extra'   => $col['Extra']
                     ];
                 }
 
@@ -81,38 +84,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $types = "sss";
                 $params = [$username, $email, $hashed];
 
-                // Penanganan Kolom 'name' (Khas PUSTANI)
-                if (array_key_exists('name', $existing_columns)) {
-                    $fields[] = 'name';
-                    $placeholders[] = '?';
-                    $types .= "s";
-                    $params[] = $username; 
-                }
+                /** * PENANGANAN KOLOM DINAMIS 
+                 * Mengisi kolom yang bersifat NOT NULL dan tidak punya default value
+                 */
+                foreach ($existing_columns as $fieldName => $info) {
+                    // Lewati kolom yang sudah dimasukkan atau yang auto-increment (seperti ID)
+                    if (in_array($fieldName, $fields) || strpos($info['extra'], 'auto_increment') !== false) {
+                        continue;
+                    }
 
-                // Penanganan Kolom 'role'
-                if (array_key_exists('role', $existing_columns)) {
-                    $fields[] = 'role';
-                    $placeholders[] = '?';
-                    $types .= "s";
-                    $params[] = $role;
-                }
-
-                // Penanganan Laravel Timestamps
-                if (array_key_exists('created_at', $existing_columns)) {
-                    $fields[] = 'created_at';
-                    $placeholders[] = 'NOW()';
-                }
-                if (array_key_exists('updated_at', $existing_columns)) {
-                    $fields[] = 'updated_at';
-                    $placeholders[] = 'NOW()';
-                }
-
-                // Penanganan 'remember_token' (Jika Laravel mewajibkan)
-                if (array_key_exists('remember_token', $existing_columns)) {
-                    $fields[] = 'remember_token';
-                    $placeholders[] = '?';
-                    $types .= "s";
-                    $params[] = bin2hex(random_bytes(10));
+                    // Logika pengisian kolom tambahan jika ditemukan di DB
+                    if ($fieldName === 'name') {
+                        $fields[] = 'name';
+                        $placeholders[] = '?';
+                        $types .= "s";
+                        $params[] = $username;
+                    } 
+                    elseif ($fieldName === 'role') {
+                        $fields[] = 'role';
+                        $placeholders[] = '?';
+                        $types .= "s";
+                        $params[] = $role;
+                    }
+                    elseif ($fieldName === 'created_at') {
+                        $fields[] = 'created_at';
+                        $placeholders[] = 'NOW()';
+                    }
+                    elseif ($fieldName === 'updated_at') {
+                        $fields[] = 'updated_at';
+                        $placeholders[] = 'NOW()';
+                    }
+                    elseif ($fieldName === 'remember_token') {
+                        $fields[] = 'remember_token';
+                        $placeholders[] = '?';
+                        $types .= "s";
+                        $params[] = substr(bin2hex(random_bytes(10)), 0, 10);
+                    }
+                    // Jika ada kolom NOT NULL tanpa default yang belum tertangani, beri nilai kosong agar tidak error
+                    elseif ($info['null'] === 'NO' && $info['default'] === NULL) {
+                        $fields[] = $fieldName;
+                        $placeholders[] = '?';
+                        $types .= "s";
+                        $params[] = ""; 
+                    }
                 }
 
                 // Bentuk Query Final
@@ -126,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $register_status = 'success';
                     } else {
                         $register_status = 'error';
-                        // Memberikan detail ralat dari MySQL agar Anda tahu kolom mana yang bermasalah
+                        // Pesan error spesifik jika gagal eksekusi (misal: ID tidak auto-increment)
                         $error_msg = "Database Error: " . $insert->error;
                     }
                     $insert->close();
