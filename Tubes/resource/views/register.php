@@ -5,12 +5,7 @@ session_start();
  * 1. DIAGNOSTIK KONEKSI
  * Mencari file koneksi secara otomatis.
  */
-$paths = [
-    '../../config/koneksi.php',
-    '../config/koneksi.php',
-    './config/koneksi.php',
-    'config/koneksi.php'
-];
+require_once '../../config/koneksi.php';
 
 $path_koneksi = '';
 foreach ($paths as $p) {
@@ -61,10 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt_check->close();
             } else {
                 $stmt_check->close();
-                
+
                 // Hash password (BCRYPT)
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
-                
+
                 /**
                  * 4. PROSES INSERT 
                  * Berdasarkan SQL dump Anda:
@@ -73,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  */
                 $sql_insert = "INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')";
                 $stmt_insert = $koneksi->prepare($sql_insert);
-                
+
                 if ($stmt_insert) {
                     $stmt_insert->bind_param("sss", $email, $username, $hashed);
                     $stmt_insert->execute();
@@ -94,12 +89,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pustani - Daftar Akun</title>
     <link rel="icon" href="../../public/img/img1/Logo.png" type="image/png">
-    
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
@@ -126,15 +122,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: white;
             border-radius: 30px;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
             max-width: 950px;
             width: 100%;
             display: flex;
         }
 
         .image-side {
-            background: linear-gradient(rgba(1, 147, 124, 0.85), rgba(1, 147, 124, 0.85)), 
-                        url('https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?q=80&w=1000');
+            background: linear-gradient(rgba(1, 147, 124, 0.85), rgba(1, 147, 124, 0.85)),
+                url('https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?q=80&w=1000');
             background-size: cover;
             background-position: center;
             width: 45%;
@@ -189,11 +185,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         @media (max-width: 768px) {
-            .register-card { flex-direction: column; }
-            .image-side, .form-side { width: 100%; }
+            .register-card {
+                flex-direction: column;
+            }
+
+            .image-side,
+            .form-side {
+                width: 100%;
+            }
         }
     </style>
 </head>
+
 <body>
 
     <div class="register-card shadow">
@@ -228,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label class="form-label small fw-bold text-secondary">Konfirmasi Password</label>
                     <input type="password" name="confirm_password" class="form-control" placeholder="Ulangi password" required>
                 </div>
-                
+
                 <button type="submit" class="btn btn-register shadow-sm">Daftar Sekarang</button>
             </form>
 
@@ -247,7 +250,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     text: 'Akun Anda telah sukses dibuat.',
                     icon: 'success',
                     confirmButtonColor: '#01937C'
-                }).then(() => { window.location = 'login.php'; });
+                }).then(() => {
+                    window.location = 'login.php';
+                });
             <?php elseif ($register_status == "password_mismatch") : ?>
                 Swal.fire({
                     title: 'Password Salah',
@@ -273,4 +278,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         });
     </script>
 </body>
+
 </html>
