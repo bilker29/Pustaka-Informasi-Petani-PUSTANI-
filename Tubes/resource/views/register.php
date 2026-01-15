@@ -1,7 +1,10 @@
 <?php
 session_start();
 
-// 1. PENGECEKAN PATH KONEKSI SECARA DINAMIS
+/**
+ * 1. DIAGNOSTIK KONEKSI
+ * Mencari file koneksi secara otomatis di berbagai lokasi umum.
+ */
 $paths = [
     '../../config/koneksi.php',
     '../config/koneksi.php',
@@ -18,18 +21,19 @@ foreach ($paths as $p) {
 }
 
 if (!$path_koneksi) {
-    die("Fatal Error: File koneksi.php tidak ditemukan. Pastikan folder 'config' tersedia.");
+    die("Fatal Error: File koneksi.php tidak ditemukan. Pastikan folder 'config' tersedia di lokasi yang benar.");
 }
 
 require_once $path_koneksi;
 
-// Memastikan variabel $koneksi benar-benar ada
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    die("Fatal Error: Koneksi database tidak terdeteksi. Periksa file koneksi.php Anda (pastikan nama variabelnya adalah \$koneksi).");
+    die("Fatal Error: Variabel \$koneksi tidak ditemukan dalam koneksi.php.");
 }
 
-// Matikan laporan ralat otomatis agar kita bisa menangkapnya sendiri untuk SweetAlert
-mysqli_report(MYSQLI_REPORT_OFF);
+/**
+ * 2. AKTIFKAN PELAPORAN ERROR UNTUK DEBUGGING
+ */
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 $register_status = null;
 $error_msg = '';
@@ -40,10 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    // Validasi Input Dasar
-    if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
+    // Validasi Sederhana di Sisi Server
+    if (empty($username) || empty($email) || empty($password)) {
         $register_status = 'error';
-        $error_msg = 'Semua kolom wajib diisi.';
+        $error_msg = 'Harap isi semua kolom yang tersedia.';
     } elseif ($password !== $confirm_password) {
         $register_status = 'password_mismatch';
     } elseif (strlen($password) < 6) {
@@ -51,93 +55,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_msg = 'Password minimal harus 6 karakter.';
     } else {
         try {
-            // 2. INSPEKSI TABEL (Mendeteksi kolom yang benar-benar ada di database)
+            /**
+             * 3. INSPEKSI STRUKTUR TABEL SECARA REAL-TIME
+             * Kita membaca database agar tahu kolom apa yang WAJIB diisi.
+             */
             $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
-            if (!$res_cols) {
-                throw new Exception("Gagal membaca struktur tabel 'users': " . $koneksi->error);
-            }
-            
-            $existing_columns = [];
+            $db_columns = [];
             while ($col = $res_cols->fetch_assoc()) {
-                $existing_columns[$col['Field']] = [
-                    'null'    => $col['Null'],
-                    'default' => $col['Default'],
-                    'extra'   => $col['Extra']
+                $db_columns[$col['Field']] = [
+                    'null'    => $col['Null'],    // 'YES' atau 'NO'
+                    'default' => $col['Default'], // null jika tidak ada
+                    'extra'   => $col['Extra']   // 'auto_increment' dsb
                 ];
             }
 
-            // 3. CEK DUPLIKASI DATA
-            // Kita harus mengecek kolom email (pasti ada) dan username/name (jika ada)
-            $check_sql = "SELECT id FROM users WHERE email = ?";
-            if (isset($existing_columns['username'])) {
-                $check_sql .= " OR username = ?";
-            } elseif (isset($existing_columns['name'])) {
-                $check_sql .= " OR name = ?";
-            }
-            $check_sql .= " LIMIT 1";
-
-            $stmt_check = $koneksi->prepare($check_sql);
-            if (isset($existing_columns['username']) || isset($existing_columns['name'])) {
-                $stmt_check->bind_param("ss", $email, $username);
-            } else {
-                $stmt_check->bind_param("s", $email);
-            }
-            
+            /**
+             * 4. CEK DUPLIKASI DATA
+             */
+            $check_field = isset($db_columns['username']) ? 'username' : 'name';
+            $stmt_check = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR $check_field = ? LIMIT 1");
+            $stmt_check->bind_param("ss", $email, $username);
             $stmt_check->execute();
             if ($stmt_check->get_result()->num_rows > 0) {
                 $register_status = 'email_exist';
                 $stmt_check->close();
             } else {
                 $stmt_check->close();
+                
+                // Hash password (BCRYPT - 60 karakter)
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $role = 'user';
 
-                // 4. SUSUN QUERY INSERT SECARA DINAMIS
+                /**
+                 * 5. PENYUSUNAN QUERY DINAMIS
+                 * Kita hanya memasukkan data ke kolom yang benar-benar ada di tabel Anda.
+                 */
                 $fields = [];
                 $placeholders = [];
                 $types = "";
                 $params = [];
 
-                // Pemetaan otomatis input form ke kolom database
-                if (isset($existing_columns['username'])) {
+                // Mapping kolom username/name
+                if (isset($db_columns['username'])) {
                     $fields[] = 'username'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
                 }
-                if (isset($existing_columns['name'])) {
+                if (isset($db_columns['name'])) {
                     $fields[] = 'name'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
                 }
-                if (isset($existing_columns['email'])) {
+                if (isset($db_columns['email'])) {
                     $fields[] = 'email'; $placeholders[] = '?'; $types .= "s"; $params[] = $email;
                 }
-                if (isset($existing_columns['password'])) {
+                if (isset($db_columns['password'])) {
                     $fields[] = 'password'; $placeholders[] = '?'; $types .= "s"; $params[] = $hashed;
                 }
-                if (isset($existing_columns['role'])) {
+                if (isset($db_columns['role'])) {
                     $fields[] = 'role'; $placeholders[] = '?'; $types .= "s"; $params[] = $role;
                 }
 
-                // Tambahkan Laravel Timestamps jika ada
-                if (isset($existing_columns['created_at'])) {
+                // Penanganan Timestamps (Laravel Style)
+                if (isset($db_columns['created_at'])) {
                     $fields[] = 'created_at'; $placeholders[] = 'NOW()';
                 }
-                if (isset($existing_columns['updated_at'])) {
+                if (isset($db_columns['updated_at'])) {
                     $fields[] = 'updated_at'; $placeholders[] = 'NOW()';
                 }
 
-                // Tambahkan token pengingat jika ada
-                if (isset($existing_columns['remember_token'])) {
-                    $fields[] = 'remember_token'; $placeholders[] = '?'; $types .= "s"; $params[] = substr(bin2hex(random_bytes(10)), 0, 10);
-                }
-
-                // Cek apakah ada kolom NOT NULL tanpa default yang terlewat
-                foreach ($existing_columns as $colName => $info) {
-                    if (!in_array($colName, $fields) && strpos($info['extra'], 'auto_increment') === false) {
+                /**
+                 * 6. PENANGANAN KOLOM 'NOT NULL' TANPA DEFAULT
+                 * Jika ada kolom yang wajib diisi tapi tidak ada di form, kita beri string kosong
+                 * agar MySQL tidak melempar error.
+                 */
+                foreach ($db_columns as $colName => $info) {
+                    if (!in_array($colName, $fields) && $info['extra'] !== 'auto_increment') {
                         if ($info['null'] === 'NO' && $info['default'] === NULL) {
                             $fields[] = $colName; $placeholders[] = '?'; $types .= "s"; $params[] = ""; 
                         }
                     }
                 }
 
-                // Eksekusi Insert
                 $sql_insert = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
                 $stmt_insert = $koneksi->prepare($sql_insert);
                 
@@ -145,19 +140,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!empty($params)) {
                         $stmt_insert->bind_param($types, ...$params);
                     }
-                    
-                    if ($stmt_insert->execute()) {
-                        $register_status = 'success';
-                    } else {
-                        $register_status = 'error';
-                        $error_msg = "Database Error: " . $stmt_insert->error;
-                    }
+                    $stmt_insert->execute();
+                    $register_status = 'success';
                     $stmt_insert->close();
-                } else {
-                    $register_status = 'error';
-                    $error_msg = "Gagal memproses pendaftaran: " . $koneksi->error;
                 }
             }
+        } catch (mysqli_sql_exception $e) {
+            $register_status = 'error';
+            // Menangkap pesan error asli dari MySQL (misal: "Field 'telepon' doesn't have a default value")
+            $error_msg = "Database Error: " . $e->getMessage();
         } catch (Exception $e) {
             $register_status = 'error';
             $error_msg = "Sistem Error: " . $e->getMessage();
@@ -280,7 +271,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 
     <div class="register-card shadow">
-        <!-- Bagian Visual -->
         <div class="image-side d-none d-md-flex">
             <div class="mb-4">
                 <img src="../../public/img/img1/Logo.png" alt="PUSTANI" width="80" class="mb-3 bg-white p-2 rounded-circle">
@@ -290,7 +280,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="lead">Pustaka Informasi Petani untuk memajukan sektor pertanian Indonesia melalui edukasi digital.</p>
         </div>
 
-        <!-- Bagian Form -->
         <div class="form-side">
             <div class="mb-4 text-center text-md-start">
                 <h3 class="fw-bold text-dark mb-1">Daftar Akun Baru</h3>
@@ -324,7 +313,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- JS Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
