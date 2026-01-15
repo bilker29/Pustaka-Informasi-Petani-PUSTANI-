@@ -1,26 +1,34 @@
 <?php
 session_start();
 
-// 1. PENGECEKAN PATH KONEKSI
-// Pastikan folder 'config' berada dua tingkat di atas file ini (../../)
-$path_koneksi = '../../config/koneksi.php';
+// 1. PENGECEKAN PATH KONEKSI SECARA DINAMIS
+$paths = [
+    '../../config/koneksi.php',
+    '../config/koneksi.php',
+    './config/koneksi.php',
+    'config/koneksi.php'
+];
 
-if (!file_exists($path_koneksi)) {
-    // Coba path alternatif jika file berada di lokasi berbeda
-    $path_koneksi = '../config/koneksi.php';
-    if (!file_exists($path_koneksi)) {
-        die("Fatal Error: File koneksi.php tidak ditemukan. Pastikan file tersebut ada di folder config.");
+$path_koneksi = '';
+foreach ($paths as $p) {
+    if (file_exists($p)) {
+        $path_koneksi = $p;
+        break;
     }
+}
+
+if (!$path_koneksi) {
+    die("Fatal Error: File koneksi.php tidak ditemukan. Pastikan folder 'config' tersedia.");
 }
 
 require_once $path_koneksi;
 
-// Memastikan koneksi database aktif
+// Memastikan variabel $koneksi benar-benar ada
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    die("Fatal Error: Variabel koneksi database ($koneksi) tidak ditemukan. Periksa isi koneksi.php.");
+    die("Fatal Error: Koneksi database tidak terdeteksi. Periksa file koneksi.php Anda.");
 }
 
-// Matikan pelaporan ralat otomatis agar kita bisa menangkapnya sendiri
+// Matikan laporan ralat otomatis agar kita bisa menangkapnya sendiri untuk SweetAlert
 mysqli_report(MYSQLI_REPORT_OFF);
 
 $register_status = null;
@@ -32,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    // Validasi Dasar
+    // Validasi Input Dasar
     if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
         $register_status = 'error';
         $error_msg = 'Semua kolom wajib diisi.';
@@ -43,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_msg = 'Password minimal harus 6 karakter.';
     } else {
         try {
-            // 2. CEK APAKAH USERNAME/EMAIL SUDAH ADA
+            // 2. CEK DUPLIKASI DATA
             $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
             $stmt->bind_param("ss", $email, $username);
             $stmt->execute();
@@ -57,47 +65,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $role = 'user';
 
-                // 3. DETEKSI KOLOM DATABASE SECARA OTOMATIS
-                // Ini mencegah error "Unknown Column" jika struktur tabel berbeda
+                // 3. INSPEKSI TABEL (Mendeteksi kolom wajib dan tipe datanya)
                 $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
                 $existing_columns = [];
                 while ($col = $res_cols->fetch_assoc()) {
-                    $existing_columns[] = $col['Field'];
+                    $existing_columns[$col['Field']] = [
+                        'null' => $col['Null'],
+                        'default' => $col['Default']
+                    ];
                 }
 
-                // Susun query dinamis
+                // Susun query secara otomatis
                 $fields = ['username', 'email', 'password'];
                 $placeholders = ['?', '?', '?'];
                 $types = "sss";
                 $params = [$username, $email, $hashed];
 
-                // Tambahkan 'name' jika ada (Wajib di beberapa versi PUSTANI)
-                if (in_array('name', $existing_columns)) {
+                // Penanganan Kolom 'name' (Khas PUSTANI)
+                if (array_key_exists('name', $existing_columns)) {
                     $fields[] = 'name';
                     $placeholders[] = '?';
                     $types .= "s";
                     $params[] = $username; 
                 }
 
-                // Tambahkan 'role' jika ada
-                if (in_array('role', $existing_columns)) {
+                // Penanganan Kolom 'role'
+                if (array_key_exists('role', $existing_columns)) {
                     $fields[] = 'role';
                     $placeholders[] = '?';
                     $types .= "s";
                     $params[] = $role;
                 }
 
-                // Tambahkan timestamps (Sangat penting jika menggunakan Laravel migrations)
-                if (in_array('created_at', $existing_columns)) {
+                // Penanganan Laravel Timestamps
+                if (array_key_exists('created_at', $existing_columns)) {
                     $fields[] = 'created_at';
                     $placeholders[] = 'NOW()';
                 }
-                if (in_array('updated_at', $existing_columns)) {
+                if (array_key_exists('updated_at', $existing_columns)) {
                     $fields[] = 'updated_at';
                     $placeholders[] = 'NOW()';
                 }
 
-                // Bentuk String Query
+                // Penanganan 'remember_token' (Jika Laravel mewajibkan)
+                if (array_key_exists('remember_token', $existing_columns)) {
+                    $fields[] = 'remember_token';
+                    $placeholders[] = '?';
+                    $types .= "s";
+                    $params[] = bin2hex(random_bytes(10));
+                }
+
+                // Bentuk Query Final
                 $sql = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
                 $insert = $koneksi->prepare($sql);
                 
@@ -108,17 +126,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $register_status = 'success';
                     } else {
                         $register_status = 'error';
-                        $error_msg = 'Database Error: ' . $insert->error;
+                        // Memberikan detail ralat dari MySQL agar Anda tahu kolom mana yang bermasalah
+                        $error_msg = "Database Error: " . $insert->error;
                     }
                     $insert->close();
                 } else {
                     $register_status = 'error';
-                    $error_msg = 'Gagal memproses query (Prepare): ' . $koneksi->error;
+                    $error_msg = "Gagal memproses permintaan: " . $koneksi->error;
                 }
             }
         } catch (Exception $e) {
             $register_status = 'error';
-            $error_msg = 'Ralat Sistem: ' . $e->getMessage();
+            $error_msg = "Sistem Error: " . $e->getMessage();
         }
     }
 }
@@ -238,6 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 
     <div class="register-card shadow">
+        <!-- Bagian Visual -->
         <div class="image-side d-none d-md-flex">
             <div class="mb-4">
                 <img src="../../public/img/img1/Logo.png" alt="PUSTANI" width="80" class="mb-3 bg-white p-2 rounded-circle">
@@ -247,10 +267,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="lead">Pustaka Informasi Petani untuk memajukan sektor pertanian Indonesia melalui edukasi digital.</p>
         </div>
 
+        <!-- Bagian Form -->
         <div class="form-side">
             <div class="mb-4 text-center text-md-start">
                 <h3 class="fw-bold text-dark mb-1">Daftar Akun Baru</h3>
-                <p class="text-muted small">Bergabunglah dengan ribuan petani lainnya hari ini.</p>
+                <p class="text-muted small">Bergabunglah dengan komunitas petani modern hari ini.</p>
             </div>
 
             <form action="" method="POST">
@@ -280,6 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- JS Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -299,8 +321,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             <?php elseif ($register_status == "email_exist") : ?>
                 Swal.fire({
-                    title: 'Data Sudah Ada',
-                    text: 'Username atau Email sudah terdaftar.',
+                    title: 'Gagal Daftar',
+                    text: 'Username atau Email sudah terdaftar di sistem.',
                     icon: 'warning',
                     confirmButtonColor: '#fbc02d'
                 });
