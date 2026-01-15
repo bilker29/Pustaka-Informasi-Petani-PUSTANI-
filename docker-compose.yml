@@ -7,11 +7,11 @@ services:
     container_name: service-app
     restart: always
     environment:
-      - APP_ENV=${APP_ENV}        # Diambil dari file .env
-      - DB_HOST=pustani-db        # Hostname internal docker
-      - DB_USER=${DB_USER}        # Diambil dari file .env
-      - DB_PASSWORD=${DB_PASSWORD} # Diambil dari file .env
-      - DB_NAME=${DB_NAME}        # Diambil dari file .env
+      - APP_ENV=${APP_ENV}
+      - DB_HOST=pustani-db
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
     networks:
       - pustani-net
 
@@ -29,7 +29,7 @@ services:
     container_name: service-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} # Diambil dari file .env
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASSWORD}
@@ -85,7 +85,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} # Diambil dari file .env
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
     depends_on:
       - prometheus
     networks:
