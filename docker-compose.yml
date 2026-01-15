@@ -12,6 +12,8 @@ services:
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
       - DB_NAME=pustani_db
+    volumes:
+      - ./Tubes:/var/www/html
     networks:
       - pustani-net
 

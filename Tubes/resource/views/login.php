@@ -1,6 +1,9 @@
 <?php
 session_start();
 require '../../config/koneksi.php';
+if ($koneksi->connect_error) {
+    die("Koneksi gagal: " . $koneksi->error);
+}
 
 // Non-aktifkan reporting mysqli default
 mysqli_report(MYSQLI_REPORT_OFF);
@@ -27,7 +30,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
         } else {
             // Kita ambil data user (termasuk username dan role)
             // Pastikan kolom di database sesuai (name, email, password, role, username)
-            $stmt = $koneksi->prepare("SELECT id, username, name, email, password, role FROM users WHERE email = ? LIMIT 1");
+            $stmt = $koneksi->prepare("SELECT `id`, `username`, `email`, `password`, `role` FROM `users` WHERE `email` = ? LIMIT 1");
             
             if ($stmt) {
                 $stmt->bind_param('s', $email);
@@ -41,7 +44,6 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                             // --- LOGIN SUKSES ---
                             $_SESSION['user_id'] = $user['id'];
                             $_SESSION['username'] = $user['username']; // Sesuaikan dengan JS
-                            $_SESSION['name'] = $user['name'];         // Nama lengkap
                             $_SESSION['role'] = $user['role'];
                             $_SESSION['is_login'] = true;
 
