@@ -4,6 +4,7 @@ session_start();
 /**
  * 1. DIAGNOSTIK KONEKSI
  * Mencari file koneksi secara otomatis di berbagai lokasi umum.
+ * Untuk proyek PUSTANI, koneksi biasanya berada di folder config.
  */
 $paths = [
     '../../config/koneksi.php',
@@ -57,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             /**
              * 3. INSPEKSI STRUKTUR TABEL SECARA REAL-TIME
-             * Kita membaca database agar tahu kolom apa yang WAJIB diisi.
+             * Proyek PUSTANI berbasis Laravel seringkali memiliki struktur kolom:
+             * id, name, email, password, role, created_at, updated_at
              */
             $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
             $db_columns = [];
@@ -71,10 +73,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             /**
              * 4. CEK DUPLIKASI DATA
+             * Laravel biasanya menggunakan 'email' sebagai primary identifier.
+             * Kami juga mengecek 'username' atau 'name' jika tersedia.
              */
-            $check_field = isset($db_columns['username']) ? 'username' : 'name';
-            $stmt_check = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR $check_field = ? LIMIT 1");
-            $stmt_check->bind_param("ss", $email, $username);
+            $identity_field = isset($db_columns['username']) ? 'username' : (isset($db_columns['name']) ? 'name' : 'email');
+            
+            $sql_check = "SELECT id FROM users WHERE email = ?";
+            if ($identity_field !== 'email') {
+                $sql_check .= " OR $identity_field = ?";
+            }
+            $sql_check .= " LIMIT 1";
+
+            $stmt_check = $koneksi->prepare($sql_check);
+            if ($identity_field !== 'email') {
+                $stmt_check->bind_param("ss", $email, $username);
+            } else {
+                $stmt_check->bind_param("s", $email);
+            }
+            
             $stmt_check->execute();
             if ($stmt_check->get_result()->num_rows > 0) {
                 $register_status = 'email_exist';
@@ -82,13 +98,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt_check->close();
                 
-                // Hash password (BCRYPT - 60 karakter)
+                // Hash password (BCRYPT - Standar Laravel)
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
                 $role = 'user';
 
                 /**
                  * 5. PENYUSUNAN QUERY DINAMIS
-                 * Kita hanya memasukkan data ke kolom yang benar-benar ada di tabel Anda.
+                 * Menyesuaikan field secara otomatis dengan skema database.
                  */
                 $fields = [];
                 $placeholders = [];
@@ -112,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = 'role'; $placeholders[] = '?'; $types .= "s"; $params[] = $role;
                 }
 
-                // Penanganan Timestamps (Laravel Style)
+                // Penanganan Timestamps (Laravel Style: created_at & updated_at)
                 if (isset($db_columns['created_at'])) {
                     $fields[] = 'created_at'; $placeholders[] = 'NOW()';
                 }
@@ -122,8 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 /**
                  * 6. PENANGANAN KOLOM 'NOT NULL' TANPA DEFAULT
-                 * Jika ada kolom yang wajib diisi tapi tidak ada di form, kita beri string kosong
-                 * agar MySQL tidak melempar error.
+                 * Memberikan nilai default kosong untuk kolom wajib yang tidak ada di form.
                  */
                 foreach ($db_columns as $colName => $info) {
                     if (!in_array($colName, $fields) && $info['extra'] !== 'auto_increment') {
@@ -147,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (mysqli_sql_exception $e) {
             $register_status = 'error';
-            // Menangkap pesan error asli dari MySQL (misal: "Field 'telepon' doesn't have a default value")
+            // Menangkap pesan error asli dari MySQL untuk memudahkan perbaikan di sisi pengguna
             $error_msg = "Database Error: " . $e->getMessage();
         } catch (Exception $e) {
             $register_status = 'error';
