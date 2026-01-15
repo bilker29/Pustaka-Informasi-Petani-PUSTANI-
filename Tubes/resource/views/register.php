@@ -3,8 +3,7 @@ session_start();
 
 /**
  * 1. DIAGNOSTIK KONEKSI
- * Mencari file koneksi secara otomatis di berbagai lokasi umum.
- * Untuk proyek PUSTANI, koneksi biasanya berada di folder config.
+ * Mencari file koneksi secara otomatis.
  */
 $paths = [
     '../../config/koneksi.php',
@@ -22,17 +21,13 @@ foreach ($paths as $p) {
 }
 
 if (!$path_koneksi) {
-    die("Fatal Error: File koneksi.php tidak ditemukan. Pastikan folder 'config' tersedia di lokasi yang benar.");
+    die("Fatal Error: File koneksi.php tidak ditemukan.");
 }
 
 require_once $path_koneksi;
 
-if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
-    die("Fatal Error: Variabel \$koneksi tidak ditemukan dalam koneksi.php.");
-}
-
 /**
- * 2. AKTIFKAN PELAPORAN ERROR UNTUK DEBUGGING
+ * 2. AKTIFKAN PELAPORAN ERROR
  */
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -45,56 +40,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    // Validasi Sederhana di Sisi Server
     if (empty($username) || empty($email) || empty($password)) {
         $register_status = 'error';
-        $error_msg = 'Harap isi semua kolom yang tersedia.';
+        $error_msg = 'Harap isi semua kolom.';
     } elseif ($password !== $confirm_password) {
         $register_status = 'password_mismatch';
     } elseif (strlen($password) < 6) {
         $register_status = 'error';
-        $error_msg = 'Password minimal harus 6 karakter.';
+        $error_msg = 'Password minimal 6 karakter.';
     } else {
         try {
             /**
-             * 3. INSPEKSI STRUKTUR TABEL SECARA REAL-TIME
+             * 3. CEK DUPLIKASI (Email harus UNIK sesuai struktur DB Anda)
              */
-            $res_cols = $koneksi->query("SHOW COLUMNS FROM users");
-            $db_columns = [];
-            while ($col = $res_cols->fetch_assoc()) {
-                $db_columns[$col['Field']] = [
-                    'null'    => $col['Null'],    // 'YES' atau 'NO'
-                    'default' => $col['Default'], // null jika tidak ada
-                    'extra'   => $col['Extra']   // 'auto_increment' dsb
-                ];
-            }
-
-            /**
-             * 4. CEK DUPLIKASI DATA
-             * Laravel biasanya menggunakan 'email' sebagai primary identifier.
-             * Kami juga mengecek 'username' atau 'name' jika tersedia di tabel.
-             */
-            $sql_check = "SELECT id FROM users WHERE email = ?";
-            $identity_field = '';
-            
-            if (isset($db_columns['username'])) {
-                $identity_field = 'username';
-            } elseif (isset($db_columns['name'])) {
-                $identity_field = 'name';
-            }
-
-            if ($identity_field !== '') {
-                $sql_check .= " OR $identity_field = ?";
-            }
-            $sql_check .= " LIMIT 1";
-
-            $stmt_check = $koneksi->prepare($sql_check);
-            if ($identity_field !== '') {
-                $stmt_check->bind_param("ss", $email, $username);
-            } else {
-                $stmt_check->bind_param("s", $email);
-            }
-            
+            $stmt_check = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
+            $stmt_check->bind_param("ss", $email, $username);
             $stmt_check->execute();
             if ($stmt_check->get_result()->num_rows > 0) {
                 $register_status = 'email_exist';
@@ -102,66 +62,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt_check->close();
                 
-                // Hash password (BCRYPT - Standar Laravel)
+                // Hash password (BCRYPT)
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $role = 'user';
-
+                
                 /**
-                 * 5. PENYUSUNAN QUERY DINAMIS
-                 * Perbaikan: Inisialisasi kosong untuk menghindari error "Unknown Column"
+                 * 4. PROSES INSERT 
+                 * Berdasarkan SQL dump Anda:
+                 * - Kolom: email, username, password, role
+                 * - 'name' dan 'updated_at' tidak perlu karena tidak ada di skema DB users Anda.
                  */
-                $fields = [];
-                $placeholders = [];
-                $types = "";
-                $params = [];
-
-                // Masukkan kolom hanya jika ada di database
-                if (isset($db_columns['email'])) {
-                    $fields[] = 'email'; $placeholders[] = '?'; $types .= "s"; $params[] = $email;
-                }
-                if (isset($db_columns['password'])) {
-                    $fields[] = 'password'; $placeholders[] = '?'; $types .= "s"; $params[] = $hashed;
-                }
-                if (isset($db_columns['username'])) {
-                    $fields[] = 'username'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
-                }
-                if (isset($db_columns['name'])) {
-                    $fields[] = 'name'; $placeholders[] = '?'; $types .= "s"; $params[] = $username;
-                }
-                if (isset($db_columns['role'])) {
-                    $fields[] = 'role'; $placeholders[] = '?'; $types .= "s"; $params[] = $role;
-                }
-
-                // Penanganan Timestamps (Laravel Style)
-                if (isset($db_columns['created_at'])) {
-                    $fields[] = 'created_at'; $placeholders[] = 'NOW()';
-                }
-                if (isset($db_columns['updated_at'])) {
-                    $fields[] = 'updated_at'; $placeholders[] = 'NOW()';
-                }
-
-                /**
-                 * 6. PENANGANAN KOLOM 'NOT NULL' TANPA DEFAULT
-                 */
-                foreach ($db_columns as $colName => $info) {
-                    if (!in_array($colName, $fields) && $info['extra'] !== 'auto_increment') {
-                        if ($info['null'] === 'NO' && $info['default'] === NULL) {
-                            $fields[] = $colName; $placeholders[] = '?'; $types .= "s"; $params[] = ""; 
-                        }
-                    }
-                }
-
-                if (empty($fields)) {
-                    throw new Exception("Tidak ada kolom yang cocok ditemukan di tabel 'users'.");
-                }
-
-                $sql_insert = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                $sql_insert = "INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')";
                 $stmt_insert = $koneksi->prepare($sql_insert);
                 
                 if ($stmt_insert) {
-                    if (!empty($params)) {
-                        $stmt_insert->bind_param($types, ...$params);
-                    }
+                    $stmt_insert->bind_param("sss", $email, $username, $hashed);
                     $stmt_insert->execute();
                     $register_status = 'success';
                     $stmt_insert->close();
@@ -245,12 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-color: #f8fafc;
         }
 
-        .form-control:focus {
-            border-color: var(--primary-green);
-            box-shadow: 0 0 0 3px rgba(1, 147, 124, 0.1);
-            background-color: #fff;
-        }
-
         .btn-register {
             background-color: var(--primary-green);
             color: white;
@@ -266,14 +174,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-register:hover {
             background-color: #017a66;
             transform: translateY(-2px);
-            box-shadow: 0 8px 15px rgba(1, 147, 124, 0.2);
         }
 
         .login-text {
             text-align: center;
             margin-top: 25px;
             font-size: 0.9rem;
-            color: #64748b;
         }
 
         .login-text a {
@@ -285,7 +191,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         @media (max-width: 768px) {
             .register-card { flex-direction: column; }
             .image-side, .form-side { width: 100%; }
-            .image-side { padding: 40px 30px; }
         }
     </style>
 </head>
@@ -296,24 +201,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="mb-4">
                 <img src="../../public/img/img1/Logo.png" alt="PUSTANI" width="80" class="mb-3 bg-white p-2 rounded-circle">
                 <h2 class="fw-bold">PUSTANI</h2>
-                <div class="mx-auto" style="width: 40px; height: 3px; background: var(--accent-yellow); border-radius: 10px;"></div>
             </div>
-            <p class="lead">Pustaka Informasi Petani untuk memajukan sektor pertanian Indonesia melalui edukasi digital.</p>
+            <p class="lead">Pustaka Informasi Petani untuk kemajuan sektor pertanian.</p>
         </div>
 
         <div class="form-side">
             <div class="mb-4 text-center text-md-start">
                 <h3 class="fw-bold text-dark mb-1">Daftar Akun Baru</h3>
-                <p class="text-muted small">Bergabunglah dengan komunitas petani modern hari ini.</p>
+                <p class="text-muted small">Lengkapi data di bawah untuk bergabung.</p>
             </div>
 
             <form action="" method="POST">
                 <div class="mb-1">
                     <label class="form-label small fw-bold text-secondary">Username</label>
-                    <input type="text" name="username" class="form-control" placeholder="Pilih nama pengguna" required>
+                    <input type="text" name="username" class="form-control" placeholder="Pilih username" required>
                 </div>
                 <div class="mb-1">
-                    <label class="form-label small fw-bold text-secondary">Alamat Email</label>
+                    <label class="form-label small fw-bold text-secondary">Email</label>
                     <input type="email" name="email" class="form-control" placeholder="email@contoh.com" required>
                 </div>
                 <div class="mb-1">
@@ -340,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($register_status == "success") : ?>
                 Swal.fire({
                     title: 'Berhasil!',
-                    text: 'Akun Anda telah sukses dibuat. Silakan login.',
+                    text: 'Akun Anda telah sukses dibuat.',
                     icon: 'success',
                     confirmButtonColor: '#01937C'
                 }).then(() => { window.location = 'login.php'; });
@@ -354,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php elseif ($register_status == "email_exist") : ?>
                 Swal.fire({
                     title: 'Gagal Daftar',
-                    text: 'Username atau Email sudah terdaftar di sistem.',
+                    text: 'Username atau Email sudah terdaftar.',
                     icon: 'warning',
                     confirmButtonColor: '#fbc02d'
                 });
