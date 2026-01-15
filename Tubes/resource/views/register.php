@@ -10,6 +10,9 @@ if (!file_exists($path_koneksi)) {
 
 require_once $path_koneksi;
 
+// Matikan laporan ralat otomatis agar kita bisa menanganinya secara manual dengan SweetAlert
+mysqli_report(MYSQLI_REPORT_OFF);
+
 $register_status = null;
 $error_msg = '';
 
@@ -47,25 +50,35 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                         $hashed = password_hash($password, PASSWORD_DEFAULT);
                         $role = 'user';
 
-                        // 2. Deteksi otomatis kolom yang tersedia untuk menghindari ralat "Unknown Column"
+                        // 2. Deteksi otomatis kolom yang tersedia di tabel users
                         $columns_query = $koneksi->query("SHOW COLUMNS FROM users");
                         $existing_columns = [];
-                        while($row = $columns_query->fetch_assoc()) {
-                            $existing_columns[] = $row['Field'];
+                        if ($columns_query) {
+                            while($row = $columns_query->fetch_assoc()) {
+                                $existing_columns[] = $row['Field'];
+                            }
                         }
 
-                        // Membangun query secara dinamis berdasarkan kolom yang ada di database user
+                        // Membangun query secara dinamis berdasarkan kolom yang ada
                         $fields = ['username', 'email', 'password', 'role', 'created_at'];
                         $placeholders = ['?', '?', '?', '?', 'NOW()'];
                         $types = "ssss";
                         $params = [$username, $email, $hashed, $role];
 
-                        // Tambahkan 'name' jika ada di database (sering menyebabkan ralat jika tidak ada)
+                        // Tambahkan 'name' jika kolom tersebut ada di database (untuk menghindari ralat 'Field name doesn't have a default value')
                         if (in_array('name', $existing_columns)) {
                             array_splice($fields, 1, 0, 'name');
                             array_splice($placeholders, 1, 0, '?');
                             $types = "s" . $types;
                             array_splice($params, 1, 0, $username); // Gunakan username sebagai nama default
+                        }
+
+                        // Tambahkan 'status' jika ada di database (biasanya default 'active')
+                        if (in_array('status', $existing_columns)) {
+                            $fields[] = 'status';
+                            $placeholders[] = '?';
+                            $types .= "s";
+                            $params[] = 'active';
                         }
 
                         $sql = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
@@ -78,12 +91,13 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                                 $register_status = 'success';
                             } else {
                                 $register_status = 'error';
+                                // Memberikan pesan ralat spesifik dari MySQL agar kita tahu apa yang salah
                                 $error_msg = 'Gagal menyimpan data: ' . $insert->error;
                             }
                             $insert->close();
                         } else {
                             $register_status = 'error';
-                            $error_msg = 'Kesalahan sistem database: ' . $koneksi->error;
+                            $error_msg = 'Kesalahan sistem database (Query): ' . $koneksi->error;
                         }
                     }
                 } else {
@@ -92,7 +106,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                 }
             } catch (Exception $e) {
                 $register_status = 'error';
-                $error_msg = 'Ralat: ' . $e->getMessage();
+                $error_msg = 'Ralat sistem: ' . $e->getMessage();
             }
         }
     }
