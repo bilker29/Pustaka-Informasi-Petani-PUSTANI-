@@ -7,11 +7,11 @@ services:
     container_name: service-app
     restart: always
     environment:
-      - APP_ENV=PROD
-      - DB_HOST=pustani-db    # <--- SUDAH DIPERBAIKI (Pakai Strip)
-      - DB_USER=docker_user
-      - DB_PASSWORD=docker_pass
-      - DB_NAME=pustani_db
+      - APP_ENV=${APP_ENV}        # Diambil dari file .env
+      - DB_HOST=pustani-db        # Hostname internal docker
+      - DB_USER=${DB_USER}        # Diambil dari file .env
+      - DB_PASSWORD=${DB_PASSWORD} # Diambil dari file .env
+      - DB_NAME=${DB_NAME}        # Diambil dari file .env
     networks:
       - pustani-net
 
@@ -29,15 +29,15 @@ services:
     container_name: service-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: pustani_db
-      MYSQL_USER: docker_user
-      MYSQL_PASSWORD: docker_pass
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} # Diambil dari file .env
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
       - ./Tubes/database/pustani_db.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:               
-      - "3306:3306"
+    # ports:
+    #   - "3306:3306"  <-- DITUTUP DEMI KEAMANAN
     networks:
       - pustani-net
 
@@ -85,13 +85,13 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD} # Diambil dari file .env
     depends_on:
       - prometheus
     networks:
       - pustani-net
 
-# === BAGIAN INI RATA KIRI (ROOT LEVEL) ===
+# === JARINGAN & STORAGE ===
 networks:
   pustani-net:
     driver: bridge

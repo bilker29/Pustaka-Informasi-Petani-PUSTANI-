@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script Backup Database PUSTANI
+# Script Backup Database PUSTANI (SECURE VERSION)
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="./backups"
@@ -10,7 +10,10 @@ mkdir -p $BACKUP_DIR
 
 echo "Mulai membackup database..."
 
-# Perintah docker untuk dump database dari container
-docker exec service-db /usr/bin/mysqldump -u docker_user --password=docker_pass pustani_db > "$BACKUP_DIR/$FILENAME"
+# === BAGIAN INI SUDAH DIPERBAIKI ===
+# Menggunakan perintah 'sh -c' agar script membaca variabel environment (MYSQL_USER, MYSQL_PASSWORD) 
+# milik container itu sendiri. Jadi aman karena password tidak tertulis di sini.
+
+docker exec service-db sh -c 'exec mysqldump -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' > "$BACKUP_DIR/$FILENAME"
 
 echo "Backup selesai! File tersimpan di: $BACKUP_DIR/$FILENAME"
