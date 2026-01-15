@@ -2,13 +2,10 @@
 session_start();
 require '../../config/koneksi.php';
 
-
 mysqli_report(MYSQLI_REPORT_OFF);
-
 
 $keyword = "";
 $results = [];
-// -----------------------------
 
 $missing_table_message = '';
 $query_error_message = '';
@@ -20,21 +17,18 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     exit;
 }
 
-
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     $missing_table_message = 'Koneksi database tidak ditemukan.';
 } else {
     $checkArticles = $koneksi->query("SHOW TABLES LIKE 'articles'");
     if ($checkArticles && $checkArticles->num_rows > 0) {
-
         $checkUsers = $koneksi->query("SHOW TABLES LIKE 'users'");
         $hasUsers = ($checkUsers && $checkUsers->num_rows > 0);
 
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
-
             if ($hasUsers) {
-                $sql = "SELECT articles.id, articles.title, articles.image, articles.category, articles.created_at, users.username, users.role
+                $sql = "SELECT articles.id, articles.title, articles.image, articles.category, articles.created_at, articles.content, users.username, users.role
                         FROM articles
                         JOIN users ON articles.user_id = users.id
                         WHERE articles.status = 'published' AND (articles.title LIKE ? OR articles.content LIKE ?)
@@ -42,7 +36,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             } else {
                 $sql = "SELECT id, title, image, category, created_at, content FROM articles
                         WHERE status = 'published' AND (title LIKE ? OR content LIKE ?)
-                        ORDER BY created_at DESC";
+                        ORDER BY   created_at DESC";
             }
 
             $stmt = $koneksi->prepare($sql);
@@ -51,7 +45,6 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                 if ($stmt->execute()) {
                     $res = $stmt->get_result();
                     $results = $res->fetch_all(MYSQLI_ASSOC);
-
                     if (!$hasUsers) {
                         foreach ($results as &$r) {
                             $r['username'] = 'Anonim';
@@ -69,109 +62,167 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
 
 <!DOCTYPE html>
 <html lang="id">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pustani - Pencarian</title>
+    <title>Pustani - Pencarian Informasi</title>
     <link rel="icon" href="../../public/img/img1/Logo.png" type="image/png">
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Lora:wght@400;600&display=swap" rel="stylesheet">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Lora:wght@600&display=swap" rel="stylesheet">
 
     <style>
         :root {
             --primary-color: #064e3b;
             --accent-color: #16a34a;
-            --bg-soft: #f0fdf4;
-            --text-main: #374151;
-            --nav-height: 80px;
+            --bg-body: #FAF1E6;
+            --text-muted: #64748b;
         }
 
         body {
-            background-color: #FAF1E6;
+            background-color: var(--bg-body);
             font-family: 'Plus Jakarta Sans', sans-serif;
-            color: var(--primary-color);
+            color: #334155;
+            overflow-x: hidden;
         }
 
-        /* Navbar & Nav Profile Styling */
-        .navbar {
-            height: var(--nav-height);
-            background: #ffffff;
-            border-bottom: 1px solid #edf2f7;
-            z-index: 1000;
-        }
-
+        /* --- Search Header Enhancement --- */
         .search-header {
-            background-color: #FFDBB0;
-            padding: 4rem 0;
-            text-align: center;
+            background: linear-gradient(135deg, #FFDBB0 0%, #fde68a 100%);
+            padding: 6rem 0;
+            border-radius: 0 0 60px 60px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+            margin-bottom: 2rem;
+        }
+
+        .search-container {
+            background: #ffffff;
+            padding: 8px;
+            border-radius: 50px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .search-container:focus-within {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
         }
 
         .search-input-large {
-            width: 100%;
-            padding: 1rem 1.5rem;
-            border-radius: 50px;
-            border: none;
-            font-size: 1.1rem;
+            border: none !important;
+            padding-left: 1.5rem;
+            font-weight: 500;
+            color: var(--primary-color);
         }
 
+        /* --- Article Card Enhancement --- */
         .card-article {
             border: none;
-            border-radius: 1rem;
-            transition: all 0.3s;
+            border-radius: 24px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             height: 100%;
-            background: #fff;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         }
 
         .card-article:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            transform: translateY(-12px);
+            box-shadow: 0 25px 50px -12px rgba(6, 78, 59, 0.15);
+        }
+
+        .img-container {
+            overflow: hidden;
+            height: 220px;
         }
 
         .card-article img {
-            border-radius: 1rem 1rem 0 0;
-            height: 200px;
+            width: 100%;
+            height: 100%;
             object-fit: cover;
+            transition: transform 0.6s ease;
+        }
+
+        .card-article:hover img {
+            transform: scale(1.1);
+        }
+
+        .card-body {
+            padding: 1.5rem;
         }
 
         .category-badge {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            font-weight: 700;
+            background-color: #f0fdf4;
             color: var(--accent-color);
-            margin-bottom: 0.5rem;
-            display: block;
+            padding: 5px 14px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            display: inline-block;
         }
 
         .article-title {
+            font-family: 'Lora', serif;
+            font-size: 1.25rem;
             font-weight: 700;
             line-height: 1.4;
-            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+            text-decoration: none;
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
-            text-decoration: none;
-            color: var(--primary-color);
-            font-size: 1.1rem;
+            margin-bottom: 12px;
         }
 
         .article-title:hover {
             color: var(--accent-color);
         }
 
-        .meta-text {
-            font-size: 0.8rem;
-            color: #64748b;
+        .article-excerpt {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 20px;
         }
 
-        footer {
+        /* --- Meta & Footer --- */
+        .meta-author {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-top: 15px;
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .avatar-circle {
+            width: 35px;
+            height: 35px;
             background: var(--primary-color);
             color: white;
-            padding: 5rem 0 2rem;
-            margin-top: 5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+
+        .btn-search {
+            background-color: var(--accent-color);
+            border-radius: 50px;
+            padding: 10px 25px;
+            font-weight: 700;
+            border: none;
+        }
+
+        .btn-search:hover {
+            background-color: #15803d;
         }
     </style>
 </head>
@@ -181,21 +232,31 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     <?php include 'layout/navbar.php'; ?>
 
     <section class="search-header">
-        <div class="container" style="max-width: 700px;">
-            <h2 class="fw-bold mb-4" style="color: var(--primary-color);">Cari Info Pertanian</h2>
+        <div class="container text-center" style="max-width: 800px;">
+            <span class="badge bg-white text-success px-3 py-2 rounded-pill mb-3 shadow-sm fw-bold">PUSTAKA TANI</span>
+            <h1 class="fw-800 mb-4" style="color: var(--primary-color); font-size: 2.8rem;">Temukan Ilmu Pertanian</h1>
 
-            <form action="" method="GET">
-                <div class="input-group shadow-sm rounded-pill bg-white p-1">
-                    <input type="text" name="keyword" class="form-control search-input-large shadow-none" placeholder="Ketik kata kunci (misal: Hidroponik)..." value="<?= htmlspecialchars($keyword); ?>">
-                    <button class="btn btn-success rounded-pill px-4 fw-bold" type="submit" style="background-color: var(--accent-color); border:none;">Cari</button>
+            <form action="" method="GET" class="px-2">
+                <div class="input-group search-container">
+                    <span class="input-group-text bg-transparent border-0 ps-4">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" name="keyword" class="form-control search-input-large shadow-none" 
+                           placeholder="Ketik kata kunci (Padi, Hidroponik, Pupuk)..." 
+                           value="<?= htmlspecialchars($keyword); ?>">
+                    <button class="btn btn-success btn-search px-4" type="submit">Cari Sekarang</button>
                 </div>
             </form>
         </div>
     </section>
 
-    <section class="container py-5">
-        <?php if (isset($keyword) && !empty($keyword)): ?>
-            <p class="text-muted mb-4 fs-5">Menampilkan hasil untuk: <strong class="text-dark">"<?= htmlspecialchars($keyword); ?>"</strong></p>
+    <section class="container py-4">
+        <?php if (!empty($keyword)): ?>
+            <div class="d-flex align-items-center mb-5">
+                <div class="flex-grow-1 border-bottom"></div>
+                <span class="px-3 text-muted">Hasil pencarian untuk: <strong class="text-dark">"<?= htmlspecialchars($keyword); ?>"</strong></span>
+                <div class="flex-grow-1 border-bottom"></div>
+            </div>
         <?php endif; ?>
 
         <div class="row g-4">
@@ -205,23 +266,41 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                     if (!filter_var($imgSrc, FILTER_VALIDATE_URL)) {
                         $imgSrc = "../../public/img/img1/" . $imgSrc;
                     }
+                    $excerpt = substr(strip_tags($row['content']), 0, 90);
                 ?>
                     <div class="col-md-6 col-lg-4">
-                        <div class="card card-article">
-                            <img src="<?= htmlspecialchars($imgSrc); ?>" class="card-img-top" alt="<?= htmlspecialchars($row['title']); ?>" onerror="this.src='https://placehold.co/600x400?text=No+Image'">
+                        <div class="card card-article shadow-sm">
+                            <div class="img-container">
+                                <img src="<?= htmlspecialchars($imgSrc); ?>" alt="<?= htmlspecialchars($row['title']); ?>" 
+                                     onerror="this.src='https://placehold.co/600x400?text=No+Image'">
+                            </div>
 
                             <div class="card-body">
                                 <span class="category-badge"><?= htmlspecialchars($row['category']); ?></span>
-
+                                
                                 <a href="artikel.php?id=<?= $row['id']; ?>" class="article-title">
                                     <?= htmlspecialchars($row['title']); ?>
                                 </a>
 
-                                <div class="meta-text small text-muted mt-2">
-                                    Oleh: <?= htmlspecialchars($row['username']); ?>
-                                    <?php if ($row['role'] == 'expert'): ?>
-                                        <i class="bi bi-patch-check-fill text-primary ms-1" title="Ahli Tani"></i>
-                                    <?php endif; ?>
+                                <p class="article-excerpt">
+                                    <?= $excerpt; ?>...
+                                </p>
+
+                                <div class="meta-author">
+                                    <div class="avatar-circle">
+                                        <?= strtoupper(substr($row['username'], 0, 1)); ?>
+                                    </div>
+                                    <div class="author-info">
+                                        <div class="small fw-bold text-dark">
+                                            <?= htmlspecialchars($row['username']); ?>
+                                            <?php if ($row['role'] == 'expert'): ?>
+                                                <i class="bi bi-patch-check-fill text-primary ms-1" title="Ahli Tani"></i>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="meta-text text-muted" style="font-size: 0.7rem;">
+                                            <?= date('d M Y', strtotime($row['created_at'])); ?>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -230,9 +309,12 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             <?php else : ?>
                 <?php if (!empty($keyword)): ?>
                     <div class="col-12 text-center py-5">
-                        <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" width="120" class="mb-3 opacity-75">
-                        <h4 class="fw-bold text-muted">Yah, tidak ditemukan artikel.</h4>
-                        <p class="text-muted">Coba gunakan kata kunci lain seperti "Padi", "Pupuk", atau "Hama".</p>
+                        <div class="bg-white d-inline-block p-5 rounded-5 shadow-sm">
+                            <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" width="100" class="mb-4 opacity-50">
+                            <h3 class="fw-bold text-dark">Data Tidak Ditemukan</h3>
+                            <p class="text-muted">Maaf, kami tidak menemukan artikel dengan kata kunci tersebut.<br>Cobalah kata kunci yang lebih umum.</p>
+                            <a href="search.php" class="btn btn-outline-success rounded-pill mt-3 px-4">Lihat Semua Artikel</a>
+                        </div>
                     </div>
                 <?php endif; ?>
             <?php endif; ?>
@@ -243,5 +325,4 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-
 </html>
