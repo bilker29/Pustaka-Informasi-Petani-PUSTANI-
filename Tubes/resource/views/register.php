@@ -1,76 +1,79 @@
 <?php
 session_start();
-require '../../config/koneksi.php';
+// Pastikan path ini benar. Jika folder 'auth' ada di dalam 'views', gunakan ../../
+// Jika register.php ada di root, gunakan ./config/koneksi.php
+require_once '../../config/koneksi.php';
 
 // Inisialisasi variabel status untuk SweetAlert
 $register_status = null;
 $error_msg = '';
 
-// Pastikan koneksi mysqli tersedia
+// 1. Validasi Koneksi
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     $register_status = 'error';
-    $error_msg = 'Koneksi database bermasalah.';
+    $error_msg = 'Koneksi database tidak terinisialisasi. Periksa file koneksi.php';
 } else {
-    // Cek tabel users untuk memastikan database siap
-    $check = mysqli_query($koneksi, "SHOW TABLES LIKE 'users'");
-    if ($check === false || mysqli_num_rows($check) === 0) {
+    // 2. Cek apakah tabel 'users' ada
+    $checkTable = $koneksi->query("SHOW TABLES LIKE 'users'");
+    if (!$checkTable || $checkTable->num_rows == 0) {
         $register_status = 'error';
-        $error_msg = "Tabel database 'users' tidak ditemukan.";
-    } else {
-        // Proses Form saat tombol Register ditekan
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // Ambil input sesuai atribut name di HTML
-            $username = trim($_POST['username'] ?? '');
-            $email = trim($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $confirm_password = $_POST['confirm_password'] ?? ''; 
+        $error_msg = "Sistem belum siap: Tabel 'users' tidak ditemukan di database.";
+    }
 
-            // Validasi Input
-            if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
-                $register_status = 'error';
-                $error_msg = 'Semua kolom harus diisi.';
-            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $register_status = 'error';
-                $error_msg = 'Format email tidak valid.';
-            } elseif ($password !== $confirm_password) {
-                $register_status = 'password_mismatch';
-            } elseif (strlen($password) < 6) {
-                $register_status = 'error';
-                $error_msg = 'Password minimal 6 karakter.';
+    // 3. Proses Form saat POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $register_status !== 'error') {
+        $username = trim($_POST['username'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirm_password = $_POST['confirm_password'] ?? '';
+
+        // Validasi Input
+        if (empty($username) || empty($email) || empty($password) || empty($confirm_password)) {
+            $register_status = 'error';
+            $error_msg = 'Semua kolom wajib diisi.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $register_status = 'error';
+            $error_msg = 'Format email tidak valid.';
+        } elseif ($password !== $confirm_password) {
+            $register_status = 'password_mismatch';
+        } elseif (strlen($password) < 6) {
+            $register_status = 'error';
+            $error_msg = 'Password minimal harus 6 karakter.';
+        } else {
+            // Cek duplikasi Email atau Username
+            $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
+            $stmt->bind_param("ss", $email, $username);
+            $stmt->execute();
+            $result = $stmt->get_result();
+
+            if ($result->num_rows > 0) {
+                $register_status = 'email_exist';
             } else {
-                // Cek apakah Email sudah terdaftar
-                $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
-                $stmt->bind_param("s", $email);
-                $stmt->execute();
-                $stmt->store_result();
+                $stmt->close();
+
+                // Hash password
+                $hashed = password_hash($password, PASSWORD_DEFAULT);
+                $role = 'user';
                 
-                if ($stmt->num_rows > 0) {
-                    $register_status = 'email_exist';
-                } else {
-                    $stmt->close();
+                // INSERT DATA
+                // Catatan: Pastikan tabel users Anda memiliki kolom: username, name, email, password, role, created_at
+                $sql = "INSERT INTO users (username, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
+                $insert = $koneksi->prepare($sql);
+
+                if ($insert) {
+                    // Menggunakan username sebagai 'name' sementara
+                    $insert->bind_param("sssss", $username, $username, $email, $hashed, $role);
                     
-                    // Enkripsi Password
-                    $hashed = password_hash($password, PASSWORD_DEFAULT);
-                    $role = 'user';
-                    
-                    // Insert Data User Baru
-                    // Kita isi kolom 'name' dengan value 'username' juga karena di form tidak ada input nama lengkap
-                    $insert = $koneksi->prepare("INSERT INTO users (username, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-                    
-                    if ($insert) {
-                        $insert->bind_param("sssss", $username, $username, $email, $hashed, $role);
-                        if ($insert->execute()) {
-                            $register_status = 'success';
-                        } else {
-                            $register_status = 'error';
-                            $error_msg = 'Gagal menyimpan ke database.';
-                            error_log('Register DB Error: ' . $insert->error);
-                        }
-                        $insert->close();
+                    if ($insert->execute()) {
+                        $register_status = 'success';
                     } else {
                         $register_status = 'error';
-                        $error_msg = 'Terjadi kesalahan sistem (Query Error).';
+                        $error_msg = 'Gagal mendaftar: ' . $insert->error;
                     }
+                    $insert->close();
+                } else {
+                    $register_status = 'error';
+                    $error_msg = 'Kesalahan Query: ' . $koneksi->error;
                 }
             }
         }
@@ -80,42 +83,35 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
 
 <!DOCTYPE html>
 <html lang="id">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pustani - Register</title>
     <link rel="icon" href="../../public/img/img1/Logo.png" type="image/png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            --primary-green: #00897b;
+            --primary-green: #01937C;
             --dark-green: #004d40;
-            --input-bg: #00332c;
-            --bg-cream: #fdf5e6;
+            --bg-cream: #FAF1E6;
             --accent-yellow: #fbc02d;
         }
 
         body {
             background-color: var(--bg-cream);
+            font-family: 'Plus Jakarta Sans', sans-serif;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         .navbar {
-            background-color: white !important;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-            padding: 6px 0;
-        }
-
-        .navbar-brand img {
-            height: 70px;
-            width: auto;
-            max-width: 100%;
+            background: white !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .register-container {
@@ -128,174 +124,125 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
 
         .register-card {
             background: white;
-            border-radius: 40px;
+            border-radius: 35px;
             overflow: hidden;
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
-            max-width: 950px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            max-width: 1000px;
             width: 100%;
             border: none;
-            display: flex;
-        }
-
-        .image-col {
-            display: flex;
-            flex-direction: column;
         }
 
         .image-section {
-            background-image: url('../../public/img/img1/0fcd1efc658108c14fe8049b871088a1.jpg');
+            background: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), 
+                        url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1000');
             background-size: cover;
             background-position: center;
-            flex-grow: 1;
-            margin: 20px;
-            border-radius: 30px;
-            min-height: 400px;
+            min-height: 100%;
+            display: flex;
+            align-items: flex-end;
+            padding: 40px;
+            color: white;
         }
 
         .form-section {
-            background-color: #01937C;
-            padding: 50px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+            background-color: var(--primary-green);
+            padding: 60px 50px;
             color: white;
-            height: 100%;
-            border-radius: 30px;
-        }
-
-        .register-title {
-            font-weight: 800;
-            font-size: clamp(2rem, 5vw, 3.5rem);
-            margin-bottom: 5px;
-            text-align: center;
-        }
-
-        .title-underline {
-            height: 3px;
-            background-color: var(--accent-yellow);
-            width: 100%;
-            margin: 20px auto 30px auto;
-            border-radius: 10px;
         }
 
         .form-control {
-            background-color: var(--input-bg) !important;
-            border: none;
-            border-radius: 50px;
-            padding: 12px 25px;
-            margin-bottom: 15px;
+            background-color: rgba(0, 0, 0, 0.2) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 12px 20px;
             color: white !important;
-            transition: 0.3s;
+            margin-bottom: 15px;
         }
 
-        .form-control::placeholder {
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .form-control:focus {
-            box-shadow: 0 0 0 0.25rem rgba(251, 192, 45, 0.3);
-            background-color: #002621 !important;
-        }
+        .form-control::placeholder { color: rgba(255,255,255,0.6); }
 
         .btn-register {
             background-color: white;
             color: var(--primary-green);
             border-radius: 15px;
-            padding: 12px;
+            padding: 14px;
             font-weight: 800;
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             width: 100%;
             border: none;
-            margin-top: 10px;
-            transition: all 0.3s ease;
+            margin-top: 20px;
+            transition: all 0.3s;
         }
 
         .btn-register:hover {
             background-color: var(--bg-cream);
             transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-            color: var(--dark-green);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
         }
 
         .login-link {
-            text-align: center;
-            margin-top: 20px;
             color: white;
             text-decoration: none;
-            display: block;
-            font-size: 0.95rem;
-            opacity: 0.9;
+            opacity: 0.8;
+            font-size: 0.9rem;
+            transition: 0.3s;
         }
 
-        .login-link:hover {
-            text-decoration: underline;
-            opacity: 1;
-        }
-
-        @media (max-width: 768px) {
-            .image-section {
-                display: none;
-            }
-
-            .form-section {
-                padding: 40px 25px;
-            }
-
-            .register-card {
-                border-radius: 30px;
-            }
-        }
-
-        @media (min-width: 1200px) {
-            .register-card {
-                max-width: 1000px;
-            }
-        }
+        .login-link:hover { opacity: 1; text-decoration: underline; }
     </style>
 </head>
-
 <body>
 
-    <nav class="navbar navbar-expand-lg navbar-light sticky-top">
-        <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="Home.php">
-                <img src="../../public/img/img1/logo navbar.png" alt="Logo">
+    <nav class="navbar navbar-light sticky-top">
+        <div class="container justify-content-center">
+            <a href="../../index.php">
+                <img src="../../public/img/img1/Logo.png" alt="Logo" height="50">
             </a>
         </div>
     </nav>
 
     <div class="register-container">
-        <div class="container d-flex justify-content-center">
-            <div class="card register-card">
-                <div class="row g-0 w-100">
-                    <div class="col-md-6 d-none d-md-flex image-col">
-                        <div class="image-section"></div>
+        <div class="register-card">
+            <div class="row g-0">
+                <div class="col-md-6 d-none d-md-flex p-3">
+                    <div class="image-section rounded-4">
+                        <div>
+                            <h2 class="fw-800">Mari Bergabung bersama PUSTANI</h2>
+                            <p class="small opacity-75">Dapatkan akses ribuan informasi pertanian untuk kemajuan tani Indonesia.</p>
+                        </div>
                     </div>
+                </div>
 
-                    <div class="col-md-6">
-                        <div class="form-section">
-                            <h1 class="register-title">Register</h1>
-                            <div class="title-underline"></div>
+                <div class="col-md-6">
+                    <div class="form-section">
+                        <div class="text-center mb-4">
+                            <h1 class="fw-800 mb-2">Daftar Akun</h1>
+                            <div style="width: 50px; height: 4px; background: var(--accent-yellow); margin: 0 auto; border-radius: 10px;"></div>
+                        </div>
 
-                            <form action="" method="POST">
-                                <div class="mb-1">
-                                    <input type="email" name="email" class="form-control" placeholder="Email" required>
-                                </div>
-                                <div class="mb-1">
-                                    <input type="text" name="username" class="form-control" placeholder="Username" required>
-                                </div>
-                                <div class="mb-1">
-                                    <input type="password" name="password" class="form-control" placeholder="Password" required>
-                                </div>
-                                <div class="mb-1">
-                                    <input type="password" name="confirm_password" class="form-control" placeholder="Confirm Password" required>
-                                </div>
+                        <form action="" method="POST">
+                            <div class="mb-3">
+                                <label class="small fw-bold mb-2">Username</label>
+                                <input type="text" name="username" class="form-control" placeholder="Masukkan username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="small fw-bold mb-2">Email</label>
+                                <input type="email" name="email" class="form-control" placeholder="nama@email.com" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="small fw-bold mb-2">Password</label>
+                                <input type="password" name="password" class="form-control" placeholder="Min. 6 karakter" required>
+                            </div>
+                            <div class="mb-4">
+                                <label class="small fw-bold mb-2">Konfirmasi Password</label>
+                                <input type="password" name="confirm_password" class="form-control" placeholder="Ulangi password" required>
+                            </div>
 
-                                <button type="submit" name="register" class="btn btn-register">Register</button>
-                            </form>
+                            <button type="submit" class="btn btn-register shadow-sm">Buat Akun Sekarang</button>
+                        </form>
 
-                            <a href="login.php" class="login-link">Sudah punya akun? Login disini</a>
-
+                        <div class="text-center mt-4">
+                            <a href="login.php" class="login-link">Sudah punya akun? Login di sini</a>
                         </div>
                     </div>
                 </div>
@@ -309,42 +256,36 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     <script>
         <?php if ($register_status == "success") : ?>
             Swal.fire({
-                title: 'Registrasi Berhasil!',
-                text: 'Akun Anda telah dibuat. Silakan login.',
+                title: 'Berhasil!',
+                text: 'Akun Anda telah berhasil dibuat. Silakan login.',
                 icon: 'success',
-                confirmButtonText: 'Lanjut ke Login',
-                confirmButtonColor: '#00897b'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    window.location = 'login.php';
-                }
-            });
+                confirmButtonColor: '#01937C'
+            }).then(() => { window.location = 'login.php'; });
 
         <?php elseif ($register_status == "password_mismatch") : ?>
             Swal.fire({
-                title: 'Password Tidak Cocok',
-                text: 'Pastikan password dan konfirmasi password sama.',
+                title: 'Password Salah',
+                text: 'Konfirmasi password tidak cocok.',
                 icon: 'error',
                 confirmButtonColor: '#d33'
             });
 
         <?php elseif ($register_status == "email_exist") : ?>
             Swal.fire({
-                title: 'Email Terdaftar',
-                text: 'Email ini sudah digunakan. Silakan gunakan email lain atau login.',
+                title: 'Gagal',
+                text: 'Email atau Username sudah digunakan.',
                 icon: 'warning',
                 confirmButtonColor: '#fbc02d'
             });
 
         <?php elseif ($register_status == "error") : ?>
             Swal.fire({
-                title: 'Terjadi Kesalahan',
-                text: '<?= htmlspecialchars($error_msg); ?>',
+                title: 'Error',
+                text: '<?= addslashes($error_msg); ?>',
                 icon: 'error',
                 confirmButtonColor: '#d33'
             });
         <?php endif; ?>
     </script>
 </body>
-
 </html>
