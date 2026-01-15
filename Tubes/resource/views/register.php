@@ -1,29 +1,6 @@
 <?php
 session_start();
-
-/**
- * 1. DIAGNOSTIK KONEKSI
- * Mencari file koneksi secara otomatis.
- */
 require_once '../../config/koneksi.php';
-
-$path_koneksi = '';
-foreach ($paths as $p) {
-    if (file_exists($p)) {
-        $path_koneksi = $p;
-        break;
-    }
-}
-
-if (!$path_koneksi) {
-    die("Fatal Error: File koneksi.php tidak ditemukan.");
-}
-
-require_once $path_koneksi;
-
-/**
- * 2. AKTIFKAN PELAPORAN ERROR
- */
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 $register_status = null;
