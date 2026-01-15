@@ -32,57 +32,67 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             $register_status = 'error';
             $error_msg = 'Password minimal harus 6 karakter.';
         } else {
-            // 1. Cek apakah Username atau Email sudah ada
-            $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
-            if ($stmt) {
-                $stmt->bind_param("ss", $email, $username);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                
-                if ($result->num_rows > 0) {
-                    $register_status = 'email_exist';
-                } else {
-                    $stmt->close();
-                    $hashed = password_hash($password, PASSWORD_DEFAULT);
-                    $role = 'user';
-
-                    // 2. Deteksi otomatis kolom 'name' untuk mencegah error "Unknown column"
-                    $res = $koneksi->query("SHOW COLUMNS FROM users LIKE 'name'");
-                    $hasNameColumn = ($res && $res->num_rows > 0);
-
-                    if ($hasNameColumn) {
-                        // Jika tabel memiliki kolom 'name'
-                        $sql = "INSERT INTO users (username, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
-                        $insert = $koneksi->prepare($sql);
-                        if ($insert) {
-                            $insert->bind_param("sssss", $username, $username, $email, $hashed, $role);
-                        }
+            try {
+                // 1. Cek apakah Username atau Email sudah ada
+                $stmt = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param("ss", $email, $username);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    
+                    if ($result->num_rows > 0) {
+                        $register_status = 'email_exist';
                     } else {
-                        // Jika tabel TIDAK memiliki kolom 'name'
-                        $sql = "INSERT INTO users (username, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())";
-                        $insert = $koneksi->prepare($sql);
-                        if ($insert) {
-                            $insert->bind_param("ssss", $username, $email, $hashed, $role);
-                        }
-                    }
+                        $stmt->close();
+                        $hashed = password_hash($password, PASSWORD_DEFAULT);
+                        $role = 'user';
 
-                    if (isset($insert) && $insert) {
-                        if ($insert->execute()) {
-                            $register_status = 'success';
+                        // 2. Deteksi otomatis kolom yang tersedia untuk menghindari ralat "Unknown Column"
+                        $columns_query = $koneksi->query("SHOW COLUMNS FROM users");
+                        $existing_columns = [];
+                        while($row = $columns_query->fetch_assoc()) {
+                            $existing_columns[] = $row['Field'];
+                        }
+
+                        // Membangun query secara dinamis berdasarkan kolom yang ada di database user
+                        $fields = ['username', 'email', 'password', 'role', 'created_at'];
+                        $placeholders = ['?', '?', '?', '?', 'NOW()'];
+                        $types = "ssss";
+                        $params = [$username, $email, $hashed, $role];
+
+                        // Tambahkan 'name' jika ada di database (sering menyebabkan ralat jika tidak ada)
+                        if (in_array('name', $existing_columns)) {
+                            array_splice($fields, 1, 0, 'name');
+                            array_splice($placeholders, 1, 0, '?');
+                            $types = "s" . $types;
+                            array_splice($params, 1, 0, $username); // Gunakan username sebagai nama default
+                        }
+
+                        $sql = "INSERT INTO users (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                        $insert = $koneksi->prepare($sql);
+                        
+                        if ($insert) {
+                            $insert->bind_param($types, ...$params);
+                            
+                            if ($insert->execute()) {
+                                $register_status = 'success';
+                            } else {
+                                $register_status = 'error';
+                                $error_msg = 'Gagal menyimpan data: ' . $insert->error;
+                            }
+                            $insert->close();
                         } else {
                             $register_status = 'error';
-                            // Menampilkan pesan error spesifik dari MySQL (misal: kolom yang kurang atau duplikat)
-                            $error_msg = 'Gagal menyimpan data ke database: ' . $insert->error;
+                            $error_msg = 'Kesalahan sistem database: ' . $koneksi->error;
                         }
-                        $insert->close();
-                    } else {
-                        $register_status = 'error';
-                        $error_msg = 'Kesalahan pada sistem database: ' . $koneksi->error;
                     }
+                } else {
+                    $register_status = 'error';
+                    $error_msg = 'Gagal menyiapkan query: ' . $koneksi->error;
                 }
-            } else {
+            } catch (Exception $e) {
                 $register_status = 'error';
-                $error_msg = 'Gagal menyiapkan query: ' . $koneksi->error;
+                $error_msg = 'Ralat: ' . $e->getMessage();
             }
         }
     }

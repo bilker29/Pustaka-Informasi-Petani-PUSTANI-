@@ -7,7 +7,7 @@ services:
     container_name: service-app
     restart: always
     environment:
-      - APP_ENV=PROD
+      - APP_ENV=${APP_ENV}
       - DB_HOST=pustani-db    # <--- SUDAH DIPERBAIKI (Pakai Strip)
       - DB_USER=docker_user
       - DB_PASSWORD=docker_pass
