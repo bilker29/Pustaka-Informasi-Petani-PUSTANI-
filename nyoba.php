@@ -1,1 +1,0 @@
-halo perkenalkan nama saya billy wicaksono bisa di panggil bilker saya adalah seorang mahasiswa teknik informatika di universitas pasundan di semester 3 
