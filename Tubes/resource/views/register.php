@@ -1,7 +1,9 @@
 <?php
 session_start();
+// Pastikan path ini benar sesuai struktur foldermu
 require_once __DIR__ . '/../../config/koneksi.php';
 
+// Aktifkan error report agar kita tahu kalau ada masalah SQL
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 $register_status = null;
@@ -10,9 +12,10 @@ $error_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
+    // 1. Validasi Input Dasar
     if (empty($username) || empty($email) || empty($password)) {
         $register_status = 'error';
         $error_msg = 'Harap isi semua kolom.';
@@ -23,35 +26,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_msg = 'Password minimal 6 karakter.';
     } else {
         try {
-            /**
-             * 3. CEK DUPLIKASI (Email harus UNIK sesuai struktur DB Anda)
-             */
+            // 2. Cek Duplikasi (Email/Username)
             $stmt_check = $koneksi->prepare("SELECT id FROM users WHERE email = ? OR username = ? LIMIT 1");
+            if (!$stmt_check) {
+                throw new Exception("Gagal cek user: " . $koneksi->error);
+            }
+            
             $stmt_check->bind_param("ss", $email, $username);
             $stmt_check->execute();
-            if ($stmt_check->get_result()->num_rows > 0) {
+            $result_check = $stmt_check->get_result();
+            
+            if ($result_check->num_rows > 0) {
                 $register_status = 'email_exist';
                 $stmt_check->close();
             } else {
                 $stmt_check->close();
 
-                // Hash password (BCRYPT)
+                // 3. Hash Password
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
 
-                /**
-                 * 4. PROSES INSERT 
-                 * Berdasarkan SQL dump Anda:
-                 * - Kolom: email, username, password, role
-                 * - 'name' dan 'updated_at' tidak perlu karena tidak ada di skema DB users Anda.
-                 */
+                // 4. Proses Insert Data
                 $sql_insert = "INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')";
                 $stmt_insert = $koneksi->prepare($sql_insert);
 
+                // PERBAIKAN: Cek apakah prepare berhasil
                 if ($stmt_insert) {
                     $stmt_insert->bind_param("sss", $email, $username, $hashed);
-                    $stmt_insert->execute();
-                    $register_status = 'success';
+                    
+                    // PERBAIKAN: Cek apakah execute berhasil
+                    if ($stmt_insert->execute()) {
+                        $register_status = 'success';
+                    } else {
+                        throw new Exception("Gagal menyimpan data: " . $stmt_insert->error);
+                    }
                     $stmt_insert->close();
+                } else {
+                    // Ini akan menangkap jika tabel tidak ada atau nama kolom salah
+                    throw new Exception("Query Error (Prepare): " . $koneksi->error);
                 }
             }
         } catch (mysqli_sql_exception $e) {
