@@ -30,17 +30,17 @@ jobs:
           script: |
             # 1. Buat folder tujuan (jika belum ada)
             sudo mkdir -p /var/www/html/pustani
-            
+
             # 2. Pindahkan file dari folder sementara ke folder asli
             # Menggunakan rsync agar lebih aman dan menimpa file lama
             sudo rsync -av --remove-source-files pustani_temp/ /var/www/html/pustani/
-            
+
             # Bersihkan folder sementara
             rm -rf pustani_temp
 
             # 3. Masuk ke folder project
             cd /var/www/html/pustani
-            
+
             # 4. Perbaiki izin file (PENTING untuk upload gambar)
             sudo chown -R www-data:www-data /var/www/html/pustani
             sudo chmod -R 775 /var/www/html/pustani
@@ -49,5 +49,5 @@ jobs:
             # Kita inject variabel environment secara eksplisit di sini
             sudo docker-compose down --remove-orphans
             APP_ENV=production sudo -E docker-compose up -d --build
-            
+
             echo "Deploy Selesai! Pustani sudah live dengan database baru."

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # === MICROSERVICE 1: APP UTAMA ===
   pustani-app:

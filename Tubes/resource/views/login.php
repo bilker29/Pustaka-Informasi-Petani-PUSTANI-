@@ -31,21 +31,21 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
             // Kita ambil data user (termasuk username dan role)
             // Pastikan kolom di database sesuai (name, email, password, role, username)
             $stmt = $koneksi->prepare("SELECT `id`, `username`, `email`, `password`, `role` FROM `users` WHERE `email` = ? LIMIT 1");
-            
+
             if ($stmt) {
                 $stmt->bind_param('s', $email);
                 if ($stmt->execute()) {
                     $res = $stmt->get_result();
                     if ($res && $res->num_rows === 1) {
                         $user = $res->fetch_assoc();
-                        
+
                         // Verifikasi password
-                        if (password_verify($password, $user['password'])) {
+                        if (password_verify($_POST['password'], $data_user['password'])) {
                             // --- LOGIN SUKSES ---
                             $_SESSION['user_id'] = $user['id'];
                             $_SESSION['username'] = $user['username']; // Sesuaikan dengan JS
                             $_SESSION['role'] = $user['role'];
-                            $_SESSION['is_login'] = true;
+                            $_SESSION['login'] = true;
 
                             // Set status untuk SweetAlert
                             $login_status = 'success';
@@ -94,19 +94,106 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 
     <style>
-        :root { --primary-green: #064e3b; --text-green: #004d40; --bg-cream: #FAF1E6; }
-        body { background-color: var(--bg-cream); min-height: 100vh; display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; }
-        .navbar { background-color: white !important; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); padding: 5px 0; }
-        .login-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 0; }
-        .login-card { background: white; border-radius: 30px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); max-width: 850px; width: 100%; border: none; }
-        .image-section { background-image: url('../../public/img/img1/coverlogin.jpg'); background-size: cover; background-position: center; min-height: 450px; margin: 20px; border-radius: 20px; }
-        .form-section { padding: 50px; }
-        .login-title { color: var(--primary-green); font-weight: bold; font-size: 3rem; margin-bottom: 15px; }
-        .title-underline { height: 3px; background-color: var(--primary-green); width: 100%; margin-bottom: 30px; }
-        .form-control { background-color: #e9ecef; border: none; border-radius: 50px; padding: 12px 25px; margin-bottom: 15px; color: var(--text-green); }
-        .btn-login { background-color: var(--primary-green); color: white; border-radius: 50px; padding: 12px; font-weight: bold; font-size: 1.2rem; width: 100%; border: none; margin-top: 10px; transition: 0.3s; }
-        .btn-login:hover { background-color: var(--text-green); transform: translateY(-2px); }
-        .register-link { text-align: center; margin-top: 20px; color: var(--primary-green); text-decoration: none; display: block; font-weight: 600; }
+        :root {
+            --primary-green: #064e3b;
+            --text-green: #004d40;
+            --bg-cream: #FAF1E6;
+        }
+
+        body {
+            background-color: var(--bg-cream);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .navbar {
+            background-color: white !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            padding: 5px 0;
+        }
+
+        .login-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 0;
+        }
+
+        .login-card {
+            background: white;
+            border-radius: 30px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            max-width: 850px;
+            width: 100%;
+            border: none;
+        }
+
+        .image-section {
+            background-image: url('../../public/img/img1/coverlogin.jpg');
+            background-size: cover;
+            background-position: center;
+            min-height: 450px;
+            margin: 20px;
+            border-radius: 20px;
+        }
+
+        .form-section {
+            padding: 50px;
+        }
+
+        .login-title {
+            color: var(--primary-green);
+            font-weight: bold;
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .title-underline {
+            height: 3px;
+            background-color: var(--primary-green);
+            width: 100%;
+            margin-bottom: 30px;
+        }
+
+        .form-control {
+            background-color: #e9ecef;
+            border: none;
+            border-radius: 50px;
+            padding: 12px 25px;
+            margin-bottom: 15px;
+            color: var(--text-green);
+        }
+
+        .btn-login {
+            background-color: var(--primary-green);
+            color: white;
+            border-radius: 50px;
+            padding: 12px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            width: 100%;
+            border: none;
+            margin-top: 10px;
+            transition: 0.3s;
+        }
+
+        .btn-login:hover {
+            background-color: var(--text-green);
+            transform: translateY(-2px);
+        }
+
+        .register-link {
+            text-align: center;
+            margin-top: 20px;
+            color: var(--primary-green);
+            text-decoration: none;
+            display: block;
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -131,7 +218,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                         <div class="form-section">
                             <h1 class="login-title">Login</h1>
                             <div class="title-underline"></div>
-                            
+
                             <?php if (!empty($error_message) && $login_status == null): ?>
                                 <div class="alert alert-danger rounded-pill"><?= htmlspecialchars($error_message); ?></div>
                             <?php endif; ?>
@@ -185,4 +272,5 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
         <?php endif; ?>
     </script>
 </body>
+
 </html>

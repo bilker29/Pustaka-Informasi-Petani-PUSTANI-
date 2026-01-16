@@ -10,7 +10,7 @@ $error_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
+    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
     $confirm_password = $_POST['confirm_password'] ?? '';
 
     if (empty($username) || empty($email) || empty($password)) {
