@@ -40,7 +40,7 @@ if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
                         $user = $res->fetch_assoc();
 
                         // Verifikasi password
-                        if (password_verify($_POST['password'], $data_user['password'])) {
+                        if (password_verify($password, $user['password'])) {
                             // --- LOGIN SUKSES ---
                             $_SESSION['user_id'] = $user['id'];
                             $_SESSION['username'] = $user['username']; // Sesuaikan dengan JS

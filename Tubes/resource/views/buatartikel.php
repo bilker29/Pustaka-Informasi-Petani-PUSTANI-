@@ -11,6 +11,11 @@ if (!isset($_SESSION['login'])) {
 // 2. CEK ROLE
 $id_user = $_SESSION['user_id'];
 $cek_user = mysqli_query($koneksi, "SELECT role FROM users WHERE id = '$id_user'");
+if (!$cek_user || mysqli_num_rows($cek_user) === 0) {
+    session_destroy();
+    header("Location: login.php");
+    exit;
+}
 $data_user = mysqli_fetch_assoc($cek_user);
 
 // PROTEKSI: Admin dilarang masuk ke area form user, arahkan ke dashboard admin
@@ -19,14 +24,7 @@ if ($data_user['role'] === 'admin') {
     exit;
 }
 
-$cek_user = mysqli_query($koneksi, "SELECT role FROM users WHERE id = '$id_user'");
-if (!$cek_user || mysqli_num_rows($cek_user) === 0) {
-    // Handle jika user tidak valid/dihapus saat sesi masih aktif
-    session_destroy();
-    header("Location: login.php");
-    exit;
-}
-$data_user = mysqli_fetch_assoc($cek_user);
+if ($data_user['role'] !== 'expert') {
 ?>
     <!DOCTYPE html>
     <html lang="id">
@@ -64,7 +62,9 @@ $data_user = mysqli_fetch_assoc($cek_user);
 <?php
     exit;
 }
+?>
 
+<?php
 // --- PROSES UPLOAD ---
 $status_post = "";
 
